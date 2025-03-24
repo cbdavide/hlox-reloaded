@@ -60,6 +60,7 @@ test-suite hlox-reloaded-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      ScannerSpec
       Paths_hlox_reloaded
   autogen-modules:
       Paths_hlox_reloaded
@@ -69,6 +70,9 @@ test-suite hlox-reloaded-test
   build-depends:
       base >=4.7 && <5
     , hlox-reloaded
+    , hspec
     , mtl
+    , tasty
+    , tasty-hspec
     , text
   default-language: Haskell2010
