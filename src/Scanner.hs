@@ -1,7 +1,10 @@
 {-# LANGUAGE  OverloadedStrings #-}
 
 module Scanner (
-    scanTokens
+  ScannerContext (..)
+, advance
+, advanceIfMatches
+, scanTokens
 ) where
 
 import Control.Monad.State (State, gets, modify)
@@ -78,16 +81,23 @@ modifySource s' = modify (\x -> x { source = s' })
 modifyTokens :: [Token] -> ScannerState ()
 modifyTokens t' = modify (\x -> x { tokens = t' })
 
--- Take the next character from the source if any and update the context
+modifyLexeme :: T.Text -> ScannerState ()
+modifyLexeme l' = modify (\x -> x { currentLexeme = l' })
+
+-- Takes the next character from the source, if any and updates the context
 advance :: ScannerState (Maybe Char)
 advance = do
     result <- gets (T.uncons . source)
+    currLexeme <- gets currentLexeme
 
     case result of
         Nothing -> return Nothing
-        Just (x, xs) -> modifySource xs >> return (Just x)
+        Just (x, xs) -> do
+            modifySource xs
+            modifyLexeme $ T.append currLexeme (T.singleton x)
+            return (Just x)
 
--- Take the next character if it satisfies the given function
+-- Takes the next character if it satisfies the given function
 advanceIfMatches :: (Char -> Bool) -> ScannerState Bool
 advanceIfMatches check = do
     result <- gets (T.uncons . source)
