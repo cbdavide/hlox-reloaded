@@ -1,13 +1,16 @@
 {-# LANGUAGE  OverloadedStrings #-}
 
 module Scanner (
-  ScannerContext (..)
+  Token (..)
+, TokenType (..)
+, ScannerContext (..)
 , advance
 , advanceIfMatches
 , scanTokens
 ) where
 
 import Control.Monad.State (State, gets, modify)
+import Control.Monad.Extra (ifM, unless)
 import qualified Data.Text as T
 
 data TokenType =
@@ -44,13 +47,13 @@ data Token = Token
     -- Location info
     , tokenOffset        :: Int
     , tokenLegnth        :: Int
-    } deriving (Show)
+    } deriving (Eq, Show)
 
 
 data Error = Error
     { errorOffset       :: Int
     , errorLength       :: Int
-    } deriving (Show)
+    } deriving (Eq, Show)
 
 
 data ScannerContext = ScannerContext
@@ -65,7 +68,7 @@ data ScannerContext = ScannerContext
     -- outputs
     , tokens        :: [Token]
     , errors        :: [Error]
-    } deriving (Show)
+    } deriving (Eq, Show)
 
 type ScannerState a = State ScannerContext a
 
@@ -106,6 +109,17 @@ advanceIfMatches check = do
         Nothing -> return False
         Just (x, _) -> if check x then advance >> return True else return False
 
+advanceUntil :: (Char -> Bool) -> ScannerState ()
+advanceUntil f = do
+    next <- advance
+
+    case next of
+        Nothing -> return ()
+        (Just c) -> unless (f c) (advanceUntil f)
+
+ignoreUntil :: (Char -> Bool) -> ScannerState ()
+ignoreUntil f = advanceUntil f >> modifyLexeme ""
+
 appendToken :: Token -> ScannerState ()
 appendToken t = gets tokens >>= (\x -> modifyTokens (x ++ [t]))
 
@@ -131,6 +145,21 @@ processToken c = case c of
     '+' -> addToken PLUS
     ';' -> addToken SEMICOLON
     '*' -> addToken STAR
+    '!' -> ifM (advanceIfMatches (== '='))
+               (addToken BANG_EQUAL)
+               (addToken BANG)
+    '=' -> ifM (advanceIfMatches (== '='))
+               (addToken EQUAL_EQUAL)
+               (addToken EQUAL)
+    '<' -> ifM (advanceIfMatches (== '='))
+               (addToken LESS_EQUAL)
+               (addToken LESS)
+    '>' -> ifM (advanceIfMatches (== '='))
+               (addToken GREATER_EQUAL)
+               (addToken GREATER)
+    '/' -> ifM (advanceIfMatches (== '/'))
+               (ignoreUntil (== '\n'))
+               (addToken SLASH)
     _ -> undefined
 
 
@@ -139,5 +168,5 @@ scanTokens = do
     next <- advance
 
     case next of
-        Nothing -> return ()
+        Nothing -> addToken EOF
         Just c -> processToken c >> scanTokens

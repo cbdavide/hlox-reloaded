@@ -5,12 +5,13 @@ module ScannerSpec (scannerSpecs) where
 import Test.Hspec
 import Control.Monad.State
 
-import Scanner ( ScannerContext (..), advance, advanceIfMatches )
+import Scanner
 
 scannerSpecs :: Spec
 scannerSpecs = describe "Scanner" $ do
     spec_advance
     spec_advanceIfMatches
+    spec_scanTokens
 
 baseScannerCtx :: ScannerContext
 baseScannerCtx = ScannerContext 
@@ -62,4 +63,17 @@ spec_advanceIfMatches = describe "advanceIfMatches" $ do
         result `shouldBe` True
         source newState `shouldBe` ""
         currentLexeme newState `shouldBe` "c"
+
+spec_scanTokens :: Spec
+spec_scanTokens = describe "scanTokens" $ do
+
+    it "success - ignores comments" $ do
+        let ctx = baseScannerCtx { source = "// this is a comment\n", currentLexeme = "" }
+            newState = execState scanTokens ctx
+
+        source newState `shouldBe` ""
+        currentLexeme newState `shouldBe` ""
+        (length . errors) newState `shouldBe` 0
+        (length . tokens) newState `shouldBe` 1
+        (tokenType . head . tokens) newState `shouldBe` EOF
 
