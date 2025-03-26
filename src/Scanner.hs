@@ -4,12 +4,13 @@ module Scanner (
   Token (..)
 , TokenType (..)
 , ScannerContext (..)
+, ScannerResult
 , advance
 , advanceIfMatches
 , scanTokens
 ) where
 
-import Control.Monad.State (State, gets, modify)
+import Control.Monad.State (State, gets, modify, execState)
 import Control.Monad.Extra (ifM, unless)
 import qualified Data.Text as T
 
@@ -70,13 +71,9 @@ data ScannerContext = ScannerContext
     , errors        :: [Error]
     } deriving (Eq, Show)
 
+type ScannerResult = Either [Error] [Token]
+
 type ScannerState a = State ScannerContext a
-
-isAtEnd :: ScannerState Bool
-isAtEnd =  gets (T.null .source)
-
-isNotAtEnd :: ScannerState Bool
-isNotAtEnd = not <$> isAtEnd
 
 modifySource :: T.Text -> ScannerState ()
 modifySource s' = modify (\x -> x { source = s' })
@@ -137,8 +134,8 @@ processToken :: Char -> ScannerState ()
 processToken c = case c of
     '(' -> addToken LEFT_PAREN
     ')' -> addToken RIGHT_PAREN
-    '}' -> addToken LEFT_BRACE
-    '{' -> addToken RIGHT_BRACE
+    '{' -> addToken LEFT_BRACE
+    '}' -> addToken RIGHT_BRACE
     ',' -> addToken COMMA
     '.' -> addToken DOT
     '-' -> addToken MINUS
@@ -163,10 +160,17 @@ processToken c = case c of
     _ -> undefined
 
 
-scanTokens :: ScannerState ()
-scanTokens = do
+scanTokens' :: ScannerState ()
+scanTokens' = do
     next <- advance
 
     case next of
         Nothing -> addToken EOF
-        Just c -> processToken c >> scanTokens
+        Just c -> processToken c >> scanTokens'
+
+scanTokens :: T.Text -> ScannerResult
+scanTokens s = if not (null errors') then Left errors' else Right tokens'
+    where ctx = ScannerContext { source=s, line=1, currentLexeme="", tokens=[], errors=[] }
+          resultCtx = execState scanTokens' ctx
+          errors' = errors resultCtx
+          tokens' = tokens resultCtx
