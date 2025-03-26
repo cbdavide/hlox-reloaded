@@ -2,8 +2,11 @@
 
 module ScannerSpec (scannerSpecs) where
 
-import Test.Hspec
+import Control.Monad
 import Control.Monad.State
+import Data.Either
+import qualified Data.Text as T
+import Test.Hspec
 
 import Scanner
 
@@ -21,6 +24,9 @@ baseScannerCtx = ScannerContext
     , errors=[]
     , currentLexeme=""
     }
+
+getTokens :: ScannerResult -> [Token]
+getTokens = fromRight []
 
 spec_advance :: Spec
 spec_advance = describe "advance" $ do
@@ -67,13 +73,38 @@ spec_advanceIfMatches = describe "advanceIfMatches" $ do
 spec_scanTokens :: Spec
 spec_scanTokens = describe "scanTokens" $ do
 
-    it "success - ignores comments" $ do
-        let ctx = baseScannerCtx { source = "// this is a comment\n", currentLexeme = "" }
-            newState = execState scanTokens ctx
+    describe "scan operators" $ do
 
-        source newState `shouldBe` ""
-        currentLexeme newState `shouldBe` ""
-        (length . errors) newState `shouldBe` 0
-        (length . tokens) newState `shouldBe` 1
-        (tokenType . head . tokens) newState `shouldBe` EOF
+        let cases :: [(T.Text, TokenType)]
+            cases =
+                [ ("(", LEFT_PAREN), (")", RIGHT_PAREN) , ("{", LEFT_BRACE)
+                , ("}", RIGHT_BRACE), (",", COMMA) , (".", DOT), ("-", MINUS)
+                , ("+", PLUS), (";", SEMICOLON) , ("/", SLASH), ("*", STAR)
+
+                , ("!", BANG), ("!=", BANG_EQUAL) , ("=", EQUAL), ("==", EQUAL_EQUAL)
+                , (">", GREATER), (">=", GREATER_EQUAL) , ("<", LESS), ("<=", LESS_EQUAL)
+                ]
+
+        forM_ cases $ \(s', tp') -> do
+            it ("success - scans " ++ T.unpack s' ++ " operator") $ do
+                let result = scanTokens s'
+
+                isRight result `shouldBe` True
+                (length . getTokens) result `shouldBe` 2
+                (tokenType . head . getTokens) result `shouldBe` tp'
+                (lexeme . head . getTokens) result `shouldBe` s'
+
+    it "success - ignores comments" $ do
+        let result = scanTokens "// this is a comment"
+
+        isRight result `shouldBe` True
+        (length . getTokens) result `shouldBe` 1
+        (tokenType . head . getTokens) result `shouldBe` EOF
+
+    it "success - scan tokens after comment with line break" $ do
+        let result = scanTokens "// this is a comment\n!"
+
+        isRight result `shouldBe` True
+        (length . getTokens) result `shouldBe` 2
+        (tokenType . head . getTokens) result `shouldBe` BANG
 
