@@ -9,6 +9,7 @@ import qualified Data.Text as T
 import Test.Hspec
 
 import Scanner
+import qualified Test.Tasty.Runners as T
 
 scannerSpecs :: Spec
 scannerSpecs = describe "Scanner" $ do
@@ -89,12 +90,34 @@ spec_scanTokens = describe "scanTokens" $ do
         forM_ cases $ \(s', tp') -> do
             it ("success - scans " ++ T.unpack s' ++ " operator") $ do
                 let result = scanTokens s'
-                    tokens = getTokens result
+                    tokens' = getTokens result
 
                 isRight result `shouldBe` True
-                length tokens `shouldBe` 2
-                (tokenType . head) tokens `shouldBe` tp'
-                (lexeme . head) tokens `shouldBe` s'
+                length tokens' `shouldBe` 2
+                (tokenType . head) tokens' `shouldBe` tp'
+                (lexeme . head) tokens' `shouldBe` s'
+
+    describe "scan ignores blank characters" $ do
+
+        let cases :: [T.Text]
+            cases = ["\n", " ", "\t", "\r"]
+
+        let format :: T.Text -> String
+            format t = T.unpack $ case t of
+                "\n" -> "\\n"
+                "\t" -> "\\t"
+                "\r" -> "\\r"
+                x -> x
+
+        forM_ cases $ \s' -> do
+            it ("success - ignores '" ++ format s' ++ "'") $ do
+                let result = scanTokens s'
+                    tokens' = getTokens result
+
+                isRight result `shouldBe` True
+                length tokens' `shouldBe` 1
+                (tokenType . head) tokens' `shouldBe` EOF
+                (lexeme . head) tokens' `shouldBe` ""
 
     it "success - ignores comments" $ do
         let result = scanTokens "// this is a comment"
