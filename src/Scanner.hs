@@ -46,8 +46,9 @@ data Token = Token
     , literal       :: Value
 
     -- Location info
-    , tokenOffset        :: Int
-    , tokenLegnth        :: Int
+    , tokenLine     :: Int
+    , tokenColumn   :: Int
+    , tokenLength   :: Int
     } deriving (Eq, Show)
 
 
@@ -64,6 +65,7 @@ data ScannerContext = ScannerContext
 
     -- state
     , line          :: Int
+    , column        :: Int
     , currentLexeme :: T.Text
 
     -- outputs
@@ -84,6 +86,37 @@ modifyTokens t' = modify (\x -> x { tokens = t' })
 modifyLexeme :: T.Text -> ScannerState ()
 modifyLexeme l' = modify (\x -> x { currentLexeme = l' })
 
+modifyColumn :: Int -> ScannerState ()
+modifyColumn n' = modify (\x -> x { column = n' })
+
+modifyLine :: Int -> ScannerState ()
+modifyLine n' = modify (\x -> x { line = n' })
+
+incrementLine :: ScannerState ()
+incrementLine = gets line >>= (\x -> modifyLine (x + 1))
+
+incrementColumnWith :: (Int -> Int) -> ScannerState ()
+incrementColumnWith f = gets column >>= modifyColumn . f
+
+incrementColumn :: ScannerState ()
+incrementColumn = incrementColumnWith (+ 1)
+
+resetColumn :: ScannerState ()
+resetColumn = modify (\x -> x { column = 1 })
+
+modifyPosition :: Char -> ScannerState ()
+modifyPosition '\n' = incrementLine >> resetColumn
+modifyPosition '\t' = incrementColumnWith (\x -> x + 4 - ((x - 1) `mod` 4))
+modifyPosition _ = incrementColumn
+
+peek :: ScannerState Char
+peek = do
+    result <- gets (T.uncons . source)
+
+    case result of
+        Nothing -> return '\0'
+        Just (x, _) -> return x
+
 -- Takes the next character from the source, if any and updates the context
 advance :: ScannerState (Maybe Char)
 advance = do
@@ -94,6 +127,7 @@ advance = do
         Nothing -> return Nothing
         Just (x, xs) -> do
             modifySource xs
+            modifyPosition x
             modifyLexeme $ T.append currLexeme (T.singleton x)
             return (Just x)
 
@@ -117,6 +151,9 @@ advanceUntil f = do
 ignoreUntil :: (Char -> Bool) -> ScannerState ()
 ignoreUntil f = advanceUntil f >> modifyLexeme ""
 
+ignore :: ScannerState ()
+ignore = modifyLexeme ""
+
 appendToken :: Token -> ScannerState ()
 appendToken t = gets tokens >>= (\x -> modifyTokens (x ++ [t]))
 
@@ -124,7 +161,8 @@ createToken :: TokenType -> ScannerState Token
 createToken tp =
     gets (Token tp . currentLexeme)
     <*> return (StringValue "tmp")
-    <*> return 10
+    <*> gets line
+    <*> gets column
     <*> gets (T.length . currentLexeme)
 
 addToken :: TokenType -> ScannerState ()
@@ -157,6 +195,10 @@ processToken c = case c of
     '/' -> ifM (advanceIfMatches (== '/'))
                (ignoreUntil (== '\n'))
                (addToken SLASH)
+    ' '  -> ignore
+    '\r' -> ignore
+    '\t' -> ignore
+    '\n' -> ignore
     _ -> undefined
 
 
@@ -170,7 +212,7 @@ scanTokens' = do
 
 scanTokens :: T.Text -> ScannerResult
 scanTokens s = if not (null errors') then Left errors' else Right tokens'
-    where ctx = ScannerContext { source=s, line=1, currentLexeme="", tokens=[], errors=[] }
+    where ctx = ScannerContext { source=s, line=1, column=1, currentLexeme="", tokens=[], errors=[] }
           resultCtx = execState scanTokens' ctx
           errors' = errors resultCtx
           tokens' = tokens resultCtx

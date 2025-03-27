@@ -21,6 +21,7 @@ baseScannerCtx = ScannerContext
     { tokens=[]
     , source=""
     , line=0
+    , column=0
     , errors=[]
     , currentLexeme=""
     }
@@ -88,11 +89,12 @@ spec_scanTokens = describe "scanTokens" $ do
         forM_ cases $ \(s', tp') -> do
             it ("success - scans " ++ T.unpack s' ++ " operator") $ do
                 let result = scanTokens s'
+                    tokens = getTokens result
 
                 isRight result `shouldBe` True
-                (length . getTokens) result `shouldBe` 2
-                (tokenType . head . getTokens) result `shouldBe` tp'
-                (lexeme . head . getTokens) result `shouldBe` s'
+                length tokens `shouldBe` 2
+                (tokenType . head) tokens `shouldBe` tp'
+                (lexeme . head) tokens `shouldBe` s'
 
     it "success - ignores comments" $ do
         let result = scanTokens "// this is a comment"
