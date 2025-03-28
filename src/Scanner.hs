@@ -1,17 +1,20 @@
 {-# LANGUAGE  OverloadedStrings #-}
 
 module Scanner (
-  Token (..)
+  Error
+, Token (..)
 , TokenType (..)
 , ScannerContext (..)
 , ScannerResult
+, Value (..)
 , advance
 , advanceIfMatches
 , scanTokens
+, scanTokens'
 ) where
 
 import Control.Monad.State (State, gets, modify, execState)
-import Control.Monad.Extra (ifM, unless)
+import Control.Monad.Extra (ifM, when)
 import qualified Data.Text as T
 
 data TokenType =
@@ -53,8 +56,10 @@ data Token = Token
 
 
 data Error = Error
-    { errorOffset       :: Int
-    , errorLength       :: Int
+    { errorMessage  :: T.Text
+    , errorLexeme   :: T.Text
+    , errorLine     :: Int
+    , errorColumn   :: Int
     } deriving (Eq, Show)
 
 
@@ -83,6 +88,9 @@ modifySource s' = modify (\x -> x { source = s' })
 modifyTokens :: [Token] -> ScannerState ()
 modifyTokens t' = modify (\x -> x { tokens = t' })
 
+modifyErrors :: [Error] -> ScannerState ()
+modifyErrors e' = modify (\x -> x { errors = e' })
+
 modifyLexeme :: T.Text -> ScannerState ()
 modifyLexeme l' = modify (\x -> x { currentLexeme = l' })
 
@@ -109,14 +117,6 @@ modifyPosition '\n' = incrementLine >> resetColumn
 modifyPosition '\t' = incrementColumnWith (\x -> x + 4 - ((x - 1) `mod` 4))
 modifyPosition _ = incrementColumn
 
-peek :: ScannerState Char
-peek = do
-    result <- gets (T.uncons . source)
-
-    case result of
-        Nothing -> return '\0'
-        Just (x, _) -> return x
-
 -- Takes the next character from the source, if any and updates the context
 advance :: ScannerState (Maybe Char)
 advance = do
@@ -131,22 +131,18 @@ advance = do
             modifyLexeme $ T.append currLexeme (T.singleton x)
             return (Just x)
 
+peek :: ScannerState (Maybe Char)
+peek = gets source >>= \x -> return (fst <$> T.uncons x)
+
 -- Takes the next character if it satisfies the given function
 advanceIfMatches :: (Char -> Bool) -> ScannerState Bool
-advanceIfMatches check = do
-    result <- gets (T.uncons . source)
-
+advanceIfMatches check = peek >>= \result -> do
     case result of
         Nothing -> return False
-        Just (x, _) -> if check x then advance >> return True else return False
+        Just x -> if check x then advance >> return True else return False
 
 advanceUntil :: (Char -> Bool) -> ScannerState ()
-advanceUntil f = do
-    next <- advance
-
-    case next of
-        Nothing -> return ()
-        (Just c) -> unless (f c) (advanceUntil f)
+advanceUntil f = advanceIfMatches (not . f) >>= \x -> when x (advanceUntil f)
 
 ignoreUntil :: (Char -> Bool) -> ScannerState ()
 ignoreUntil f = advanceUntil f >> modifyLexeme ""
@@ -157,16 +153,49 @@ ignore = modifyLexeme ""
 appendToken :: Token -> ScannerState ()
 appendToken t = gets tokens >>= (\x -> modifyTokens (x ++ [t]))
 
-createToken :: TokenType -> ScannerState Token
-createToken tp =
-    gets (Token tp . currentLexeme)
-    <*> return (StringValue "tmp")
+appendError :: Error -> ScannerState ()
+appendError e = gets errors >>= (\x -> modifyErrors (x ++ [e]))
+
+createError :: T.Text -> ScannerState Error
+createError m =
+        gets (Error m . currentLexeme)
     <*> gets line
     <*> gets column
+
+createToken :: TokenType -> ScannerState Token
+createToken tp =
+        gets (Token tp . formatLexeme tp . currentLexeme)
+    <*> return (StringValue "tmp")
+    <*> gets line
+    <*> calculateLexemeStartColumn
     <*> gets (T.length . currentLexeme)
 
+calculateLexemeStartColumn :: ScannerState Int
+calculateLexemeStartColumn = do
+    lexemeLength <- gets (T.length . currentLexeme)
+    col <- gets column
+    return $ col - lexemeLength + 1
+
+formatLexeme :: TokenType -> T.Text -> T.Text
+formatLexeme tp l = case tp of
+    STRING -> T.takeWhile (/= '"') $ T.drop 1 l
+    _ -> l
+
 addToken :: TokenType -> ScannerState ()
-addToken tp = createToken tp >>= appendToken
+addToken tp = createToken tp >>= appendToken >> modifyLexeme ""
+
+addError :: T.Text -> ScannerState ()
+addError m = createError m >>= appendError >> modifyLexeme ""
+
+scanAndAddStringToken :: ScannerState ()
+scanAndAddStringToken = do
+    advanceUntil (\x -> x == '"' || x == '\n')
+    advance -- to get the closing " or \n
+    lexeme' <- gets (T.head . T.reverse . currentLexeme)
+
+    if lexeme' == '"'
+        then addToken STRING
+        else addError "unterminated string"
 
 processToken :: Char -> ScannerState ()
 processToken c = case c of
@@ -199,6 +228,7 @@ processToken c = case c of
     '\r' -> ignore
     '\t' -> ignore
     '\n' -> ignore
+    '"' -> scanAndAddStringToken
     _ -> undefined
 
 
@@ -212,7 +242,7 @@ scanTokens' = do
 
 scanTokens :: T.Text -> ScannerResult
 scanTokens s = if not (null errors') then Left errors' else Right tokens'
-    where ctx = ScannerContext { source=s, line=1, column=1, currentLexeme="", tokens=[], errors=[] }
+    where ctx = ScannerContext { source=s, line=1, column=0, currentLexeme="", tokens=[], errors=[] }
           resultCtx = execState scanTokens' ctx
           errors' = errors resultCtx
           tokens' = tokens resultCtx
