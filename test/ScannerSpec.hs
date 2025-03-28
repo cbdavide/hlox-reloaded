@@ -30,6 +30,9 @@ baseScannerCtx = ScannerContext
 getTokens :: ScannerResult -> [Token]
 getTokens = fromRight []
 
+getErrors :: ScannerResult -> [Error]
+getErrors = fromLeft []
+
 spec_advance :: Spec
 spec_advance = describe "advance" $ do
 
@@ -126,10 +129,63 @@ spec_scanTokens = describe "scanTokens" $ do
         (length . getTokens) result `shouldBe` 1
         (tokenType . head . getTokens) result `shouldBe` EOF
 
-    it "success - scan tokens after comment with line break" $ do
+    it "success - scans tokens after comment with line break" $ do
         let result = scanTokens "// this is a comment\n!"
 
         isRight result `shouldBe` True
         (length . getTokens) result `shouldBe` 2
         (tokenType . head . getTokens) result `shouldBe` BANG
 
+    it "success - scans multiple tokens" $ do
+        let result = scanTokens "(==)"
+            tokens' = getTokens result
+
+        isRight result `shouldBe` True
+        (length . getTokens) result `shouldBe` 4
+
+        (tokens' !! 0) `shouldBe` Token
+            { tokenType=LEFT_PAREN
+            , tokenLine=1
+            , tokenLength=1
+            , tokenColumn=1
+            , literal= StringValue "tmp"
+            , lexeme="("
+            }
+
+        (tokens' !! 1) `shouldBe` Token
+            { tokenType=EQUAL_EQUAL
+            , tokenLine=1
+            , tokenLength=2
+            , tokenColumn=2
+            , literal= StringValue "tmp"
+            , lexeme="=="
+            }
+
+        (tokens' !! 2) `shouldBe` Token
+            { tokenType=RIGHT_PAREN
+            , tokenLine=1
+            , tokenLength=1
+            , tokenColumn=4
+            , literal= StringValue "tmp"
+            , lexeme=")"
+            }
+
+        tokenType (tokens' !! 2) `shouldBe` RIGHT_PAREN
+
+    it "success - scans string" $ do
+        let result = scanTokens "\"hello i'm a string\""
+            tokens' = getTokens result
+
+            expectedLexeme = "hello i'm a string"
+
+        isRight result `shouldBe` True
+        length tokens' `shouldBe` 2
+        (tokenType . head) tokens' `shouldBe` STRING
+        (lexeme . head) tokens' `shouldBe` expectedLexeme
+
+    it "fails - scanning invalid string" $ do
+        let result = scanTokens "\"hello i'm an invalid string\n"
+            errors' = getErrors result
+
+        isLeft result `shouldBe` True
+        -- TODO: Add more assertions
