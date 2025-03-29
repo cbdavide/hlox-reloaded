@@ -16,6 +16,7 @@ module Scanner (
 import Control.Monad.State (State, gets, modify, execState)
 import Control.Monad.Extra (ifM, when)
 import qualified Data.Text as T
+import Data.Maybe (fromMaybe)
 
 data TokenType =
     -- Single-character tokens
@@ -60,6 +61,7 @@ data Error = Error
     , errorLexeme   :: T.Text
     , errorLine     :: Int
     , errorColumn   :: Int
+    , lexemeLength  :: Int
     } deriving (Eq, Show)
 
 
@@ -160,7 +162,8 @@ createError :: T.Text -> ScannerState Error
 createError m =
         gets (Error m . currentLexeme)
     <*> gets line
-    <*> gets column
+    <*> calculateLexemeStartColumn
+    <*> gets (T.length . currentLexeme)
 
 createToken :: TokenType -> ScannerState Token
 createToken tp =
@@ -172,9 +175,9 @@ createToken tp =
 
 calculateLexemeStartColumn :: ScannerState Int
 calculateLexemeStartColumn = do
-    lexemeLength <- gets (T.length . currentLexeme)
+    lexemeLength' <- gets (T.length . currentLexeme)
     col <- gets column
-    return $ col - lexemeLength + 1
+    return $ col - lexemeLength' + 1
 
 formatLexeme :: TokenType -> T.Text -> T.Text
 formatLexeme tp l = case tp of
@@ -190,10 +193,9 @@ addError m = createError m >>= appendError >> modifyLexeme ""
 scanAndAddStringToken :: ScannerState ()
 scanAndAddStringToken = do
     advanceUntil (\x -> x == '"' || x == '\n')
-    advance -- to get the closing " or \n
-    lexeme' <- gets (T.head . T.reverse . currentLexeme)
+    lastChar <- fromMaybe '\0' <$> advance
 
-    if lexeme' == '"'
+    if lastChar == '"'
         then addToken STRING
         else addError "unterminated string"
 
