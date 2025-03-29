@@ -2,78 +2,31 @@
 
 module ScannerSpec (scannerSpecs) where
 
-import Control.Monad
-import Control.Monad.State
-import Data.Either
+import Control.Monad ( forM_ )
+import Data.Either ( fromLeft, fromRight, isLeft, isRight )
+import Data.List.NonEmpty (fromList, NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as T
-import Test.Hspec
+import Test.Hspec ( describe, it, shouldBe, Spec )
 
 import Scanner
-import qualified Test.Tasty.Runners as T
+    ( scanTokens
+    , Error(..)
+    , ScannerResult
+    , Token(..)
+    , TokenType(..)
+    , Value(..)
+    )
 
 scannerSpecs :: Spec
 scannerSpecs = describe "Scanner" $ do
-    spec_advance
-    spec_advanceIfMatches
     spec_scanTokens
 
-baseScannerCtx :: ScannerContext
-baseScannerCtx = ScannerContext 
-    { tokens=[]
-    , source=""
-    , line=0
-    , column=0
-    , errors=[]
-    , currentLexeme=""
-    }
+getTokens :: ScannerResult -> NonEmpty Token
+getTokens a = fromList $ fromRight [] a
 
-getTokens :: ScannerResult -> [Token]
-getTokens = fromRight []
-
-getErrors :: ScannerResult -> [Error]
-getErrors = fromLeft []
-
-spec_advance :: Spec
-spec_advance = describe "advance" $ do
-
-    it "fails - if the source is empty" $ do
-        let ctx = baseScannerCtx { source = "" }
-            result = evalState advance ctx
-        
-        result `shouldBe` Nothing
-
-    it "success - consumes the next character" $ do
-        let ctx = baseScannerCtx { source = "hello", currentLexeme = "hig", line = 0 }
-            (result, newState) = runState advance ctx
-        
-        result `shouldBe` Just 'h'
-        currentLexeme newState `shouldBe` "high"
-        source newState `shouldBe` "ello"
-        line newState `shouldBe` 0
-
-
-spec_advanceIfMatches :: Spec
-spec_advanceIfMatches = describe "advanceIfMatches" $ do
-    
-    it "fails - if the source is empty" $ do
-        let ctx = baseScannerCtx { source = "" }
-            result = evalState (advanceIfMatches (== 'a')) ctx
-        
-        result `shouldBe` False
-
-    it "fails - if source next char doesn't match" $ do
-        let ctx = baseScannerCtx { source = "c" }
-            result = evalState (advanceIfMatches (== 'a')) ctx
-        
-        result `shouldBe` False
-
-    it "success - if source next char matches" $ do
-        let ctx = baseScannerCtx { source = "c", currentLexeme = "" }
-            (result, newState) = runState (advanceIfMatches (== 'c')) ctx
-        
-        result `shouldBe` True
-        source newState `shouldBe` ""
-        currentLexeme newState `shouldBe` "c"
+getErrors :: ScannerResult -> NonEmpty Error
+getErrors a = fromList $ fromLeft [] a
 
 spec_scanTokens :: Spec
 spec_scanTokens = describe "scanTokens" $ do
@@ -97,8 +50,8 @@ spec_scanTokens = describe "scanTokens" $ do
 
                 isRight result `shouldBe` True
                 length tokens' `shouldBe` 2
-                (tokenType . head) tokens' `shouldBe` tp'
-                (lexeme . head) tokens' `shouldBe` s'
+                (tokenType . NonEmpty.head) tokens' `shouldBe` tp'
+                (lexeme . NonEmpty.head) tokens' `shouldBe` s'
 
     describe "scan ignores blank characters" $ do
 
@@ -119,22 +72,22 @@ spec_scanTokens = describe "scanTokens" $ do
 
                 isRight result `shouldBe` True
                 length tokens' `shouldBe` 1
-                (tokenType . head) tokens' `shouldBe` EOF
-                (lexeme . head) tokens' `shouldBe` ""
+                (tokenType . NonEmpty.head) tokens' `shouldBe` EOF
+                (lexeme . NonEmpty.head) tokens' `shouldBe` ""
 
     it "success - ignores comments" $ do
         let result = scanTokens "// this is a comment"
 
         isRight result `shouldBe` True
         (length . getTokens) result `shouldBe` 1
-        (tokenType . head . getTokens) result `shouldBe` EOF
+        (tokenType . NonEmpty.head . getTokens) result `shouldBe` EOF
 
     it "success - scans tokens after comment with line break" $ do
         let result = scanTokens "// this is a comment\n!"
 
         isRight result `shouldBe` True
         (length . getTokens) result `shouldBe` 2
-        (tokenType . head . getTokens) result `shouldBe` BANG
+        (tokenType . NonEmpty.head . getTokens) result `shouldBe` BANG
 
     it "success - scans multiple tokens" $ do
         let result = scanTokens "(==)"
@@ -143,7 +96,7 @@ spec_scanTokens = describe "scanTokens" $ do
         isRight result `shouldBe` True
         (length . getTokens) result `shouldBe` 4
 
-        (tokens' !! 0) `shouldBe` Token
+        NonEmpty.head tokens' `shouldBe` Token
             { tokenType=LEFT_PAREN
             , tokenLine=1
             , tokenLength=1
@@ -152,7 +105,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , lexeme="("
             }
 
-        (tokens' !! 1) `shouldBe` Token
+        (tokens' NonEmpty.!! 1) `shouldBe` Token
             { tokenType=EQUAL_EQUAL
             , tokenLine=1
             , tokenLength=2
@@ -161,7 +114,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , lexeme="=="
             }
 
-        (tokens' !! 2) `shouldBe` Token
+        (tokens' NonEmpty.!! 2) `shouldBe` Token
             { tokenType=RIGHT_PAREN
             , tokenLine=1
             , tokenLength=1
@@ -170,7 +123,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , lexeme=")"
             }
 
-        tokenType (tokens' !! 2) `shouldBe` RIGHT_PAREN
+        tokenType (tokens' NonEmpty.!! 2) `shouldBe` RIGHT_PAREN
 
     it "success - scans string" $ do
         let result = scanTokens "\"hello i'm a string\""
@@ -180,19 +133,29 @@ spec_scanTokens = describe "scanTokens" $ do
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 2
-        (tokenType . head) tokens' `shouldBe` STRING
-        (lexeme . head) tokens' `shouldBe` expectedLexeme
+        (tokenType . NonEmpty.head) tokens' `shouldBe` STRING
+        (lexeme . NonEmpty.head) tokens' `shouldBe` expectedLexeme
 
     it "fails - scanning invalid string" $ do
-        let result = scanTokens "\"hello i'm an invalid string\n"
+        let input =  "\"hello i'm an invalid string\n"
+            expectedLexeme = T.dropEnd 1 input -- \n is not scanned
+            result = scanTokens input
             errors' = getErrors result
 
         isLeft result `shouldBe` True
-        -- TODO: Add more assertions
+        length errors' `shouldBe` 1
+        (errorMessage . NonEmpty.head) errors' `shouldBe` "unterminated string"
+        (errorLexeme . NonEmpty.head) errors' `shouldBe` expectedLexeme
+        (errorLexemeLength . NonEmpty.head) errors' `shouldBe` T.length expectedLexeme
+        (errorColumn . NonEmpty.head) errors' `shouldBe` 1
 
     it "fails - scanning invalid string EOF" $ do
-        let result = scanTokens "\"hello i'm an invalid string"
+        let input =  "\"hello i'm an invalid string"
+            result = scanTokens input
             errors' = getErrors result
 
         isLeft result `shouldBe` True
-        -- TODO: Add more assertions
+        length errors' `shouldBe` 1
+        (errorMessage . NonEmpty.head) errors' `shouldBe` "unterminated string"
+        (errorLexeme . NonEmpty.head) errors' `shouldBe` input
+        (errorColumn . NonEmpty.head) errors' `shouldBe` 1
