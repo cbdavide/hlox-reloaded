@@ -189,3 +189,10 @@ spec_scanTokens = describe "scanTokens" $ do
 
         isLeft result `shouldBe` True
         -- TODO: Add more assertions
+
+    it "fails - scanning invalid string EOF" $ do
+        let result = scanTokens "\"hello i'm an invalid string"
+            errors' = getErrors result
+
+        isLeft result `shouldBe` True
+        -- TODO: Add more assertions
