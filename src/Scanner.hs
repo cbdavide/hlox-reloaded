@@ -1,22 +1,18 @@
 {-# LANGUAGE  OverloadedStrings #-}
 
 module Scanner (
-  Error
+  Error (..)
 , Token (..)
 , TokenType (..)
 , ScannerContext (..)
 , ScannerResult
 , Value (..)
-, advance
-, advanceIfMatches
 , scanTokens
-, scanTokens'
 ) where
 
 import Control.Monad.State (State, gets, modify, execState)
 import Control.Monad.Extra (ifM, when)
 import qualified Data.Text as T
-import Data.Maybe (fromMaybe)
 
 data TokenType =
     -- Single-character tokens
@@ -57,11 +53,11 @@ data Token = Token
 
 
 data Error = Error
-    { errorMessage  :: T.Text
-    , errorLexeme   :: T.Text
-    , errorLine     :: Int
-    , errorColumn   :: Int
-    , lexemeLength  :: Int
+    { errorMessage      :: T.Text
+    , errorLexeme       :: T.Text
+    , errorLine         :: Int
+    , errorColumn       :: Int
+    , errorLexemeLength :: Int
     } deriving (Eq, Show)
 
 
@@ -193,10 +189,10 @@ addError m = createError m >>= appendError >> modifyLexeme ""
 scanAndAddStringToken :: ScannerState ()
 scanAndAddStringToken = do
     advanceUntil (\x -> x == '"' || x == '\n')
-    lastChar <- fromMaybe '\0' <$> advance
+    closesString <- advanceIfMatches (== '"')
 
-    if lastChar == '"'
-        then addToken STRING
+    if closesString
+        then advance >> addToken STRING
         else addError "unterminated string"
 
 processToken :: Char -> ScannerState ()
