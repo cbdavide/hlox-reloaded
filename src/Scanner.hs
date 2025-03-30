@@ -13,6 +13,8 @@ module Scanner (
 import Control.Monad.State (State, gets, modify, execState)
 import Control.Monad.Extra (ifM, when)
 import qualified Data.Text as T
+import Data.Char (isDigit)
+import Data.Maybe (isJust)
 
 data TokenType =
     -- Single-character tokens
@@ -132,6 +134,10 @@ advance = do
 peek :: ScannerState (Maybe Char)
 peek = gets source >>= \x -> return (fst <$> T.uncons x)
 
+peekNext :: ScannerState (Maybe Char)
+peekNext = gets source >>= \x -> return $ getSecondElement x
+    where getSecondElement t = T.uncons t >>= \x -> fst <$> T.uncons (snd x)
+
 -- Takes the next character if it satisfies the given function
 advanceIfMatches :: (Char -> Bool) -> ScannerState Bool
 advanceIfMatches check = peek >>= \result -> do
@@ -195,6 +201,18 @@ scanAndAddStringToken = do
         then advance >> addToken STRING
         else addError "unterminated string"
 
+scanAndAddNumericToken :: ScannerState ()
+scanAndAddNumericToken = do
+    advanceUntil (not . isDigit)
+
+    isNextADot <- (fmap . fmap) (== '.')  peek
+    isSndADigit <- (fmap . fmap) isDigit peekNext
+
+    when (isJust isNextADot && isJust isSndADigit) $
+        advance >> advanceUntil (not . isDigit)
+
+    addToken NUMBER
+
 processToken :: Char -> ScannerState ()
 processToken c = case c of
     '(' -> addToken LEFT_PAREN
@@ -227,7 +245,8 @@ processToken c = case c of
     '\t' -> ignore
     '\n' -> ignore
     '"' -> scanAndAddStringToken
-    _ -> undefined
+    _ | isDigit c -> scanAndAddNumericToken
+      | otherwise -> undefined
 
 
 scanTokens' :: ScannerState ()
