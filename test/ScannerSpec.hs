@@ -159,3 +159,51 @@ spec_scanTokens = describe "scanTokens" $ do
         (errorMessage . NonEmpty.head) errors' `shouldBe` "unterminated string"
         (errorLexeme . NonEmpty.head) errors' `shouldBe` input
         (errorColumn . NonEmpty.head) errors' `shouldBe` 1
+
+    it "success - scans integer number" $ do
+        let input = "1234567"
+            result = scanTokens input
+            tokens' = getTokens result
+
+        isRight result `shouldBe` True
+        length tokens' `shouldBe` 2
+        (tokenType . NonEmpty.head) tokens' `shouldBe` NUMBER
+        (lexeme . NonEmpty.head) tokens' `shouldBe` input
+
+    it "success - scans decimal number" $ do
+        let input = "123.4567"
+            result = scanTokens input
+            tokens' = getTokens result
+
+        isRight result `shouldBe` True
+        length tokens' `shouldBe` 2
+        (tokenType . NonEmpty.head) tokens' `shouldBe` NUMBER
+        (lexeme . NonEmpty.head) tokens' `shouldBe` input
+
+    it "success - scans number after dot" $ do
+        -- we don't allow numbers with dot prefix e.g. '.1344'
+        let input = ".987"
+            result = scanTokens input
+            tokens' = getTokens result
+
+            expectedNumber = "987"
+
+        isRight result `shouldBe` True
+        length tokens' `shouldBe` 3
+        (tokenType . NonEmpty.head) tokens' `shouldBe` DOT
+        tokenType (tokens' NonEmpty.!! 1) `shouldBe` NUMBER
+        lexeme (tokens' NonEmpty.!! 1) `shouldBe` expectedNumber
+
+    it "success - scans number after dot" $ do
+        -- we don't allow numbers with dot suffix e.g. '1344.'
+        let input = "1929."
+            result = scanTokens input
+            tokens' = getTokens result
+
+            expectedNumber = "1929"
+
+        isRight result `shouldBe` True
+        length tokens' `shouldBe` 3
+        (tokenType . NonEmpty.head) tokens' `shouldBe` NUMBER
+        (lexeme . NonEmpty.head) tokens' `shouldBe` expectedNumber
+        tokenType (tokens' NonEmpty.!! 1) `shouldBe` DOT
