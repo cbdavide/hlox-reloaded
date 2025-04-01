@@ -13,7 +13,8 @@ module Scanner (
 import Control.Monad.State (State, gets, modify, execState)
 import Control.Monad.Extra (ifM, when)
 import qualified Data.Text as T
-import Data.Char (isDigit)
+import Data.Char (isDigit, isAsciiLower, isAsciiUpper)
+import qualified Data.Map as Map
 import Data.Maybe (isJust)
 
 data TokenType =
@@ -82,6 +83,36 @@ type ScannerResult = Either [Error] [Token]
 
 type ScannerState a = State ScannerContext a
 
+kewords :: Map.Map T.Text TokenType
+kewords = Map.fromList
+    [ ("and", AND)
+    , ("class", CLASS)
+    , ("else", ELSE)
+    , ("false", FALSE)
+    , ("for", FOR)
+    , ("fun", FUN)
+    , ("if", IF)
+    , ("nil", NIL)
+    , ("or", OR)
+    , ("print", PRINT)
+    , ("return", RETURN)
+    , ("super", SUPER)
+    , ("this", THIS)
+    , ("true", TRUE)
+    , ("var", VAR)
+    , ("while", WHILE)
+    ]
+
+_isAlpha :: Char -> Bool
+_isAlpha c
+    | isAsciiLower c = True
+    | isAsciiUpper c = True
+    | c == '_' = True
+    | otherwise = False
+
+_isAlphaNumeric :: Char -> Bool
+_isAlphaNumeric c = _isAlpha c || isDigit c
+
 modifySource :: T.Text -> ScannerState ()
 modifySource s' = modify (\x -> x { source = s' })
 
@@ -148,6 +179,9 @@ advanceIfMatches check = peek >>= \result -> do
 advanceUntil :: (Char -> Bool) -> ScannerState ()
 advanceUntil f = advanceIfMatches (not . f) >>= \x -> when x (advanceUntil f)
 
+advanceWhile :: (Char -> Bool) -> ScannerState ()
+advanceWhile f = advanceUntil (not . f)
+
 ignoreUntil :: (Char -> Bool) -> ScannerState ()
 ignoreUntil f = advanceUntil f >> modifyLexeme ""
 
@@ -203,15 +237,26 @@ scanAndAddStringToken = do
 
 scanAndAddNumericToken :: ScannerState ()
 scanAndAddNumericToken = do
-    advanceUntil (not . isDigit)
+    advanceWhile isDigit
 
     isNextADot <- (fmap . fmap) (== '.')  peek
     isSndADigit <- (fmap . fmap) isDigit peekNext
 
     when (isJust isNextADot && isJust isSndADigit) $
-        advance >> advanceUntil (not . isDigit)
+        advance >> advanceWhile isDigit
 
     addToken NUMBER
+
+scanAndAddIdentifier :: ScannerState ()
+scanAndAddIdentifier = do
+    advanceWhile _isAlphaNumeric
+
+    lexeme' <- gets currentLexeme
+    let identifier = Map.lookup lexeme' kewords
+
+    case identifier of
+        Nothing -> addToken IDENTIFIER
+        (Just x) -> addToken x
 
 processToken :: Char -> ScannerState ()
 processToken c = case c of
@@ -246,6 +291,7 @@ processToken c = case c of
     '\n' -> ignore
     '"' -> scanAndAddStringToken
     _ | isDigit c -> scanAndAddNumericToken
+      | _isAlpha c -> scanAndAddIdentifier
       | otherwise -> undefined
 
 
