@@ -257,3 +257,15 @@ spec_scanTokens = describe "scanTokens" $ do
         tokenType (tokens' NonEmpty.!! 2) `shouldBe` EQUAL
         tokenType (tokens' NonEmpty.!! 3) `shouldBe` NUMBER
         tokenType (tokens' NonEmpty.!! 4) `shouldBe` EOF
+
+    it "fails - unexpected character" $ do
+        let input = "@"
+            result = scanTokens input
+            errors' = getErrors result
+
+        isLeft result `shouldBe` True
+        length errors' `shouldBe` 1
+        (errorMessage . NonEmpty.head) errors' `shouldBe` "unexpected character"
+        (errorLexeme . NonEmpty.head) errors' `shouldBe` input
+        (errorLexemeLength . NonEmpty.head) errors' `shouldBe` 1
+        (errorColumn . NonEmpty.head) errors' `shouldBe` 1

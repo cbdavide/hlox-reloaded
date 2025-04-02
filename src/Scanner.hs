@@ -295,7 +295,7 @@ processToken c = case c of
     '"' -> scanAndAddStringToken
     _ | isDigit c -> scanAndAddNumericToken
       | _isAlpha c -> scanAndAddIdentifier
-      | otherwise -> undefined
+      | otherwise -> addError "unexpected character"
 
 
 scanTokens' :: ScannerState ()
