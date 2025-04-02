@@ -269,3 +269,21 @@ spec_scanTokens = describe "scanTokens" $ do
         (errorLexeme . NonEmpty.head) errors' `shouldBe` input
         (errorLexemeLength . NonEmpty.head) errors' `shouldBe` 1
         (errorColumn . NonEmpty.head) errors' `shouldBe` 1
+
+    it "success - increment line on '\\n'" $ do
+        let result = scanTokens "var \n x \n ="
+            tokens' = getTokens result
+
+        isRight result `shouldBe` True
+        (length . getTokens) result `shouldBe` 4
+
+        (tokenType . NonEmpty.head) tokens' `shouldBe` VAR
+        (tokenLine . NonEmpty.head) tokens' `shouldBe` 1
+
+        tokenType (tokens' NonEmpty.!! 1) `shouldBe` IDENTIFIER
+        tokenLine (tokens' NonEmpty.!! 1) `shouldBe` 2
+
+        tokenType (tokens' NonEmpty.!! 2) `shouldBe` EQUAL
+        tokenLine (tokens' NonEmpty.!! 2) `shouldBe` 3
+
+        tokenType (tokens' NonEmpty.!! 3) `shouldBe` EOF
