@@ -44,7 +44,7 @@ spec_scanTokens = describe "scanTokens" $ do
                 ]
 
         forM_ cases $ \(s', tp') -> do
-            it ("success - scans " ++ T.unpack s' ++ " operator") $ do
+            it ("success - scans '" ++ T.unpack s' ++ "' operator") $ do
                 let result = scanTokens s'
                     tokens' = getTokens result
 
@@ -101,7 +101,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=1
             , tokenColumn=1
-            , literal= StringValue "tmp"
+            , literal=EmptyValue
             , lexeme="("
             }
 
@@ -110,7 +110,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=2
             , tokenColumn=2
-            , literal= StringValue "tmp"
+            , literal=EmptyValue
             , lexeme="=="
             }
 
@@ -119,22 +119,24 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=1
             , tokenColumn=4
-            , literal= StringValue "tmp"
+            , literal=EmptyValue
             , lexeme=")"
             }
 
         tokenType (tokens' NonEmpty.!! 2) `shouldBe` RIGHT_PAREN
 
     it "success - scans string" $ do
-        let result = scanTokens "\"hello i'm a string\""
+        let input = "\"hello i'm a string\""
+            result = scanTokens "\"hello i'm a string\""
             tokens' = getTokens result
 
-            expectedLexeme = "hello i'm a string"
+            expectedValue = StringValue "hello i'm a string"
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 2
         (tokenType . NonEmpty.head) tokens' `shouldBe` STRING
-        (lexeme . NonEmpty.head) tokens' `shouldBe` expectedLexeme
+        (lexeme . NonEmpty.head) tokens' `shouldBe` input
+        (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
 
     it "fails - scanning invalid string" $ do
         let input =  "\"hello i'm an invalid string\n"
@@ -165,20 +167,26 @@ spec_scanTokens = describe "scanTokens" $ do
             result = scanTokens input
             tokens' = getTokens result
 
+            expectedValue = NumberValue 1234567
+
         isRight result `shouldBe` True
         length tokens' `shouldBe` 2
         (tokenType . NonEmpty.head) tokens' `shouldBe` NUMBER
         (lexeme . NonEmpty.head) tokens' `shouldBe` input
+        (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
 
     it "success - scans decimal number" $ do
         let input = "123.4567"
             result = scanTokens input
             tokens' = getTokens result
 
+            expectedValue = NumberValue 123.4567
+
         isRight result `shouldBe` True
         length tokens' `shouldBe` 2
         (tokenType . NonEmpty.head) tokens' `shouldBe` NUMBER
         (lexeme . NonEmpty.head) tokens' `shouldBe` input
+        (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
 
     it "success - scans number after dot" $ do
         -- we don't allow numbers with dot prefix e.g. '.1344'
@@ -187,12 +195,14 @@ spec_scanTokens = describe "scanTokens" $ do
             tokens' = getTokens result
 
             expectedNumber = "987"
+            expectedValue = NumberValue 987
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 3
         (tokenType . NonEmpty.head) tokens' `shouldBe` DOT
         tokenType (tokens' NonEmpty.!! 1) `shouldBe` NUMBER
         lexeme (tokens' NonEmpty.!! 1) `shouldBe` expectedNumber
+        literal (tokens' NonEmpty.!! 1) `shouldBe` expectedValue
 
     it "success - scans number after dot" $ do
         -- we don't allow numbers with dot suffix e.g. '1344.'
@@ -201,9 +211,49 @@ spec_scanTokens = describe "scanTokens" $ do
             tokens' = getTokens result
 
             expectedNumber = "1929"
+            expectedValue = NumberValue 1929
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 3
         (tokenType . NonEmpty.head) tokens' `shouldBe` NUMBER
         (lexeme . NonEmpty.head) tokens' `shouldBe` expectedNumber
+        (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
         tokenType (tokens' NonEmpty.!! 1) `shouldBe` DOT
+
+    describe "scan identiifers" $ do
+
+        let cases :: [(T.Text, TokenType)]
+            cases =
+                [ -- keywords
+                  ("and", AND), ("class", CLASS) , ("else", ELSE)
+                , ("false", FALSE), ("for", FOR) , ("fun", FUN), ("if", IF)
+                , ("nil", NIL), ("or", OR) , ("print", PRINT), ("return", RETURN)
+                , ("super", SUPER), ("this", THIS) , ("true", TRUE), ("var", VAR)
+                , ("while", WHILE)
+
+                -- identifiers
+                , ("hello", IDENTIFIER), ("_bye", IDENTIFIER), ("id1", IDENTIFIER)
+                , ("snake_case_1", IDENTIFIER), ("hello123", IDENTIFIER)
+                ]
+
+        forM_ cases $ \(s', tp') -> do
+            it ("success - scans '" ++ T.unpack s' ++ "' identifier") $ do
+                let result = scanTokens s'
+                    tokens' = getTokens result
+
+                isRight result `shouldBe` True
+                length tokens' `shouldBe` 2
+                (tokenType . NonEmpty.head) tokens' `shouldBe` tp'
+                (lexeme . NonEmpty.head) tokens' `shouldBe` s'
+
+    it "success - expression" $ do
+        let result = scanTokens "var x = 5"
+            tokens' = getTokens result
+
+        isRight result `shouldBe` True
+        (length . getTokens) result `shouldBe` 5
+        (tokenType . NonEmpty.head) tokens' `shouldBe` VAR
+        tokenType (tokens' NonEmpty.!! 1) `shouldBe` IDENTIFIER
+        tokenType (tokens' NonEmpty.!! 2) `shouldBe` EQUAL
+        tokenType (tokens' NonEmpty.!! 3) `shouldBe` NUMBER
+        tokenType (tokens' NonEmpty.!! 4) `shouldBe` EOF
