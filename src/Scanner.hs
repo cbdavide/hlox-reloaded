@@ -39,7 +39,7 @@ data TokenType =
 
     deriving (Eq, Show)
 
-data Value = StringValue String | IntValue Int
+data Value = EmptyValue | StringValue T.Text | NumberValue Float
     deriving (Eq, Show)
 
 
@@ -203,8 +203,8 @@ createError m =
 
 createToken :: TokenType -> ScannerState Token
 createToken tp =
-        gets (Token tp . formatLexeme tp . currentLexeme)
-    <*> return (StringValue "tmp")
+        gets (Token tp . currentLexeme)
+    <*> getTokenValue tp
     <*> gets line
     <*> calculateLexemeStartColumn
     <*> gets (T.length . currentLexeme)
@@ -215,10 +215,13 @@ calculateLexemeStartColumn = do
     col <- gets column
     return $ col - lexemeLength' + 1
 
-formatLexeme :: TokenType -> T.Text -> T.Text
-formatLexeme tp l = case tp of
-    STRING -> T.takeWhile (/= '"') $ T.drop 1 l
-    _ -> l
+getTokenValue :: TokenType -> ScannerState Value
+getTokenValue STRING = gets currentLexeme >>= \x -> return $ StringValue (getStringValue x)
+getTokenValue NUMBER = gets currentLexeme >>= \x -> return $ NumberValue (read $ T.unpack x)
+getTokenValue _ = return EmptyValue
+
+getStringValue :: T.Text -> T.Text
+getStringValue l = T.takeWhile (/= '"') $ T.drop 1 l
 
 addToken :: TokenType -> ScannerState ()
 addToken tp = createToken tp >>= appendToken >> modifyLexeme ""
