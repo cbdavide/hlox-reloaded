@@ -25,6 +25,7 @@ source-repository head
 
 library
   exposed-modules:
+      Parser
       Scanner
   other-modules:
       Paths_hlox_reloaded
