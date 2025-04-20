@@ -1,11 +1,16 @@
 {-# LANGUAGE  OverloadedStrings, LambdaCase #-}
 
-module Parser (expression) where
+module Parser (
+  Expression (..)
+, LiteralValue (..)
+, ParseError (..)
+, parse
+) where
 
 import Control.Monad (void)
-import Control.Monad.Except ( ExceptT, MonadError(..) )
-import Control.Monad.Extra (ifM)
-import Control.Monad.State (State, gets, modify)
+import Control.Monad.Except ( ExceptT, MonadError(..), runExceptT )
+import Control.Monad.Extra (ifM, (||^), whenM)
+import Control.Monad.State (evalState, State, gets, modify)
 import Data.List (uncons)
 import qualified Data.Text as T
 import Scanner (Token (..), TokenType (..))
@@ -25,13 +30,13 @@ data Expression = Literal LiteralValue
 
 data ParserContext = ParserContext
     { source :: [Token]
-    , output :: Expression
+    , output :: Maybe Expression
     } deriving (Eq, Show)
 
 data ParseError = ParseError
     { errorMessage  :: T.Text
     , token         :: Maybe Token
-    }
+    } deriving (Eq, Show)
 
 type Parser a = ExceptT ParseError (State ParserContext) a
 
@@ -66,6 +71,9 @@ peek = gets (fmap fst . uncons . source)
 
 match :: [TokenType] -> Parser Bool
 match ts = maybe False ((`elem` ts) . tokenType) <$> peek
+
+isAtEnd :: Parser Bool
+isAtEnd = gets (null . source)
 
 expression :: Parser Expression
 expression = equality
@@ -109,9 +117,22 @@ group = do
 consume :: TokenType -> T.Text -> Parser ()
 consume tp msg = ifM (match [tp]) (void advance) (reportError msg)
 
+-- | Discards tokens until it thinks it has found a statement boundary.
+synchronize :: Parser ()
+synchronize = do
+    let statement_start = [CLASS, FUN, VAR, FOR, IF, WHILE, PRINT, RETURN]
+
+    ifM (match [SEMICOLON])
+        (void advance) -- consume the token, next one is the start of a statement
+        (whenM (not <$> (isAtEnd ||^ match statement_start)) (advance >> synchronize))
+
 many1 :: Parser Expression -> [TokenType] -> Parser Expression
 many1 rule tokenTypes = rule >>= go
     where go expr =
             ifM (not <$> match tokenTypes) 
                 (return expr) 
                 (Binary expr <$> unsafeAdvance <*> rule >>= go)
+
+parse :: [Token] -> Either ParseError Expression
+parse tokens = evalState (runExceptT expression) ctx
+    where ctx = ParserContext {source=tokens, output=Nothing}
