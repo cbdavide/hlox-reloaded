@@ -64,6 +64,7 @@ test-suite hlox-reloaded-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      ParserSpec
       ScannerSpec
       Paths_hlox_reloaded
   autogen-modules:
