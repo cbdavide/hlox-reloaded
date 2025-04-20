@@ -13,7 +13,7 @@ import Control.Monad.Extra (ifM, (||^), whenM)
 import Control.Monad.State (evalState, State, gets, modify)
 import Data.List (uncons)
 import qualified Data.Text as T
-import Scanner (Token (..), TokenType (..))
+import Scanner (Token (..), TokenType (..), Value (..))
 
 data LiteralValue =
       NumberValue Float
@@ -45,6 +45,9 @@ modifySource ts = modify (\x -> x { source = ts })
 
 reportError :: T.Text -> Parser a
 reportError msg = peek >>= \mt -> throwError $ ParseError {errorMessage=msg, token=mt}
+
+reportErrorWithToken :: T.Text -> Token -> Parser a
+reportErrorWithToken msg tok =throwError $ ParseError {errorMessage=msg, token=Just tok}
 
 advance :: Parser (Maybe Token)
 advance = do
@@ -100,13 +103,21 @@ primary = advance >>= \case
             FALSE -> literal' (BooleanValue False)
             TRUE -> literal' (BooleanValue True)
             NIL -> literal' Nil
-            NUMBER -> literal' (NumberValue 2)
-            STRING -> literal' (StringValue "")
+            NUMBER -> numberLiteral' t
+            STRING -> stringLiteral' t
             LEFT_PAREN -> group
             _ -> reportError "Expected expression"
 
 literal' :: LiteralValue -> Parser Expression
 literal' l = return $ Literal l
+
+numberLiteral' :: Token -> Parser Expression
+numberLiteral' Token { literal = Scanner.NumberValue y } = return $ Literal (Parser.NumberValue y)
+numberLiteral' t = reportErrorWithToken "Failed to parse numeric literal" t
+
+stringLiteral' :: Token -> Parser Expression
+stringLiteral' Token { literal = Scanner.StringValue y } = return $ Literal (Parser.StringValue y)
+stringLiteral' t = reportErrorWithToken "Failed to parse string literal" t
 
 group :: Parser Expression
 group = do
