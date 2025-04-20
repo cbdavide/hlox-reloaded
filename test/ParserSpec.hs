@@ -7,6 +7,7 @@ import Test.Hspec ( describe, it, shouldBe, Spec, Expectation, expectationFailur
 
 import Scanner ( Token (..), TokenType (..), Value (..) )
 import Parser ( Expression (..), ParseError (..), LiteralValue(..), parse )
+import qualified Data.Text as T
 
 baseToken :: Token
 baseToken = Token 
@@ -21,6 +22,12 @@ baseToken = Token
 createToken :: TokenType -> Token
 createToken tp = baseToken { tokenType = tp }
 
+createNumericToken :: Float -> Token
+createNumericToken num = (createToken NUMBER) { literal = Scanner.NumberValue num }
+
+createStringToken :: T.Text -> Token
+createStringToken s = (createToken STRING) { literal = Scanner.StringValue s }
+
 shouldParseTo :: (Eq a, Show a, Show e) => Either e a -> a -> Expectation
 shouldParseTo (Right actual) expected = actual `shouldBe` expected
 shouldParseTo (Left err) _ = expectationFailure $ "Expected successful parse but got error: " ++ show err
@@ -34,12 +41,14 @@ spec_parse = describe "parse" $ do
 
     describe "unary expressions" $ do
         
-        let cases :: [(TokenType, Expression)]
-            cases = [ (TRUE, Literal (BooleanValue True))
-                    , (FALSE, Literal (BooleanValue False))
-                    , (NIL, Literal Nil)
+        let cases :: [(Token, Expression)]
+            cases = [ (createToken TRUE, Literal (BooleanValue True))
+                    , (createToken FALSE, Literal (BooleanValue False))
+                    , (createToken NIL, Literal Nil)
+                    , (createNumericToken 25, Literal (Parser.NumberValue 25))
+                    , (createStringToken "hello", Literal (Parser.StringValue "hello"))
                     ]
 
         forM_ cases $ \(tp', expr') -> do
-            it ("success - parses '" ++ show tp' ++ "' token") $ do
-                parse [createToken tp'] `shouldParseTo` expr'
+            it ("success - parses '" ++ show (tokenType tp') ++ "' token") $ do
+                parse [tp'] `shouldParseTo` expr'
