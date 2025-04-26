@@ -106,7 +106,7 @@ primary = advance >>= \case
             NUMBER -> numberLiteral' t
             STRING -> stringLiteral' t
             LEFT_PAREN -> group
-            _ -> reportError "Expected expression"
+            _ -> reportErrorWithToken "Expected expression" t
 
 literal' :: LiteralValue -> Parser Expression
 literal' l = return $ Literal l
