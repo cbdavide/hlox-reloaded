@@ -44,6 +44,10 @@ shouldParseTo :: (Eq a, Show a, Show e) => Either e a -> a -> Expectation
 shouldParseTo (Right actual) expected = actual `shouldBe` expected
 shouldParseTo (Left err) _ = expectationFailure $ "Expected successful parse but got error: " ++ show err
 
+shouldFailTo :: (Eq e, Show e, Show a) => Either e a -> e -> Expectation
+shouldFailTo (Right a) _  = expectationFailure $ "Expected error but got successful response :" ++ show a
+shouldFailTo (Left err) expected  =  err `shouldBe` expected
+
 parserSpecs :: Spec
 parserSpecs = describe "Parser" $ do
     spec_parse
@@ -165,3 +169,55 @@ spec_parse = describe "parse" $ do
         forM_ cases $ \(s', tp') -> do
             it ("success - parses '10 " ++ s' ++ " 15' expression") $ do
                 parse [val1, tp', val2] `shouldParseTo` Binary (NumExpr 10) tp' (NumExpr 15)
+
+    describe "equality rule" $ do
+
+        it "success - parses '0 == 0' expression" $ do
+            let operator = createToken EQUAL_EQUAL
+                tokens = [createNumericToken 0, operator, createNumericToken 0]
+            parse tokens `shouldParseTo` Binary (NumExpr 0) operator (NumExpr 0)
+
+        it "success - parses '4 != 3' expression" $ do
+            let operator = createToken BANG_EQUAL
+                tokens = [createNumericToken 4, operator, createNumericToken 3]
+            parse tokens `shouldParseTo` Binary (NumExpr 4) operator (NumExpr 3)
+
+        it "success - parses '4 > 1 == 3 < 0' expression" $ do
+            let tokens =
+                    [ createNumericToken 4
+                    , createToken GREATER
+                    , createNumericToken 1
+                    , createToken EQUAL_EQUAL
+                    , createNumericToken 3
+                    , createToken LESS
+                    , createNumericToken 0
+                    ]
+
+                expectedExpression = Binary
+                    (Binary (NumExpr 4) (createToken GREATER) (NumExpr 1))
+                    (createToken EQUAL_EQUAL)
+                    (Binary (NumExpr 3) (createToken LESS) (NumExpr 0))
+
+            parse tokens `shouldParseTo` expectedExpression
+
+    describe "invalid expressions" $ do
+
+        it "fails - empty tokens input" $ do
+            parse [] `shouldFailTo` ParseError "Expected expression" Nothing
+
+        it "fails - incomplete expression" $ do
+            let tokens = [createNumericToken 10, createToken STAR]
+            parse tokens `shouldFailTo` ParseError "Expected expression" Nothing
+
+        it "fails - invalid numeric token" $ do
+            let badNumber = baseToken { tokenType = NUMBER, literal = Scanner.StringValue "NaN"}
+                tokens = [createNumericToken 10, createToken STAR, badNumber]
+            parse tokens `shouldFailTo` ParseError "Failed to parse numeric literal" (Just badNumber)
+
+        it "fails - invalid string token" $ do
+            let badString = baseToken { tokenType = STRING, literal = Scanner.NumberValue 10}
+            parse [badString] `shouldFailTo` ParseError "Failed to parse string literal" (Just badString)
+
+        it "fails - invalid literal" $ do
+            let tok = createToken DOT
+            parse [tok] `shouldFailTo` ParseError "Expected expression"(Just tok)
