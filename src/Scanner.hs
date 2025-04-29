@@ -2,57 +2,19 @@
 
 module Scanner (
   Error (..)
-, Token (..)
-, TokenType (..)
 , ScannerContext (..)
 , ScannerResult
-, Value (..)
 , scanTokens
 ) where
 
 import Control.Monad.State (State, gets, modify, execState)
 import Control.Monad.Extra (ifM, when)
-import qualified Data.Text as T
 import Data.Char (isDigit, isAsciiLower, isAsciiUpper)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
-
-data TokenType =
-    -- Single-character tokens
-    LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE |
-    COMMA | DOT | MINUS | PLUS | SEMICOLON | SLASH | STAR |
-
-    -- One or two character tokens
-    BANG | BANG_EQUAL |
-    EQUAL | EQUAL_EQUAL |
-    GREATER | GREATER_EQUAL |
-    LESS | LESS_EQUAL |
-
-    -- Literals
-    IDENTIFIER | STRING | NUMBER |
-
-    -- Keywords
-    AND | CLASS | ELSE | FALSE | FUN | FOR | IF | NIL | OR |
-    PRINT | RETURN | SUPER | THIS | TRUE | VAR | WHILE |
-
-    EOF
-
-    deriving (Eq, Show)
-
-data Value = EmptyValue | StringValue T.Text | NumberValue Float
-    deriving (Eq, Show)
-
-
-data Token = Token
-    { tokenType     :: TokenType
-    , lexeme        :: T.Text
-    , literal       :: Value
-
-    -- Location info
-    , tokenLine     :: Int
-    , tokenColumn   :: Int
-    , tokenLength   :: Int
-    } deriving (Eq, Show)
+import qualified Data.Text as T
+import Literal (LiteralValue (..))
+import Token (Token (..), TokenType (..))
 
 
 data Error = Error
@@ -215,10 +177,10 @@ calculateLexemeStartColumn = do
     col <- gets column
     return $ col - lexemeLength' + 1
 
-getTokenValue :: TokenType -> ScannerState Value
+getTokenValue :: TokenType -> ScannerState LiteralValue
 getTokenValue STRING = gets currentLexeme >>= \x -> return $ StringValue (getStringValue x)
 getTokenValue NUMBER = gets currentLexeme >>= \x -> return $ NumberValue (read $ T.unpack x)
-getTokenValue _ = return EmptyValue
+getTokenValue _ = return Nil
 
 getStringValue :: T.Text -> T.Text
 getStringValue l = T.takeWhile (/= '"') $ T.drop 1 l
