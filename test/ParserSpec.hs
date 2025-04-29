@@ -3,10 +3,10 @@
 module ParserSpec ( parserSpecs ) where
 
 import Control.Monad ( forM_ )
+import Literal ( LiteralValue (..) )
+import Parser ( Expression (..), ParseError (..), parse )
 import Test.Hspec ( describe, it, shouldBe, Spec, Expectation, expectationFailure )
-
-import Scanner ( Token (..), TokenType (..), Value (..) )
-import Parser ( Expression (..), ParseError (..), LiteralValue(..), parse )
+import Token ( Token (..), TokenType (..) )
 import qualified Data.Text as T
 
 baseToken :: Token
@@ -16,17 +16,17 @@ baseToken = Token
     , tokenLength=0
     , tokenColumn=0
     , lexeme=""
-    , literal=EmptyValue
+    , literal=Nil
     }
 
 pattern BoolExpr :: Bool -> Expression
 pattern BoolExpr b = Literal (BooleanValue b)
 
 pattern NumExpr :: Float -> Expression
-pattern NumExpr n = Literal (Parser.NumberValue n)
+pattern NumExpr n = Literal (NumberValue n)
 
 pattern StrExpr :: T.Text -> Expression
-pattern StrExpr t = Literal (Parser.StringValue t)
+pattern StrExpr t = Literal (StringValue t)
 
 createToken :: TokenType -> Token
 createToken tp = baseToken { tokenType = tp }
@@ -35,10 +35,10 @@ createTokens :: [TokenType] -> [Token]
 createTokens tps = createToken <$> tps
 
 createNumericToken :: Float -> Token
-createNumericToken num = (createToken NUMBER) { literal = Scanner.NumberValue num }
+createNumericToken num = (createToken NUMBER) { literal = NumberValue num }
 
 createStringToken :: T.Text -> Token
-createStringToken s = (createToken STRING) { literal = Scanner.StringValue s }
+createStringToken s = (createToken STRING) { literal = StringValue s }
 
 shouldParseTo :: (Eq a, Show a, Show e) => Either e a -> a -> Expectation
 shouldParseTo (Right actual) expected = actual `shouldBe` expected
@@ -210,12 +210,12 @@ spec_parse = describe "parse" $ do
             parse tokens `shouldFailTo` ParseError "Expected expression" Nothing
 
         it "fails - invalid numeric token" $ do
-            let badNumber = baseToken { tokenType = NUMBER, literal = Scanner.StringValue "NaN"}
+            let badNumber = baseToken { tokenType = NUMBER, literal = StringValue "NaN"}
                 tokens = [createNumericToken 10, createToken STAR, badNumber]
             parse tokens `shouldFailTo` ParseError "Failed to parse numeric literal" (Just badNumber)
 
         it "fails - invalid string token" $ do
-            let badString = baseToken { tokenType = STRING, literal = Scanner.NumberValue 10}
+            let badString = baseToken { tokenType = STRING, literal = NumberValue 10}
             parse [badString] `shouldFailTo` ParseError "Failed to parse string literal" (Just badString)
 
         it "fails - invalid literal" $ do

@@ -2,7 +2,6 @@
 
 module Parser (
   Expression (..)
-, LiteralValue (..)
 , ParseError (..)
 , parse
 ) where
@@ -13,14 +12,8 @@ import Control.Monad.Extra (ifM, (||^), whenM)
 import Control.Monad.State (evalState, State, gets, modify)
 import Data.List (uncons)
 import qualified Data.Text as T
-import Scanner (Token (..), TokenType (..), Value (..))
-
-data LiteralValue =
-      NumberValue Float
-    | StringValue T.Text  
-    | BooleanValue Bool
-    | Nil
-    deriving (Eq, Show)
+import Literal ( LiteralValue (..) )
+import Token ( Token (..), TokenType (..) )
 
 data Expression = Literal LiteralValue
     | Unary Token Expression
@@ -112,11 +105,11 @@ literal' :: LiteralValue -> Parser Expression
 literal' l = return $ Literal l
 
 numberLiteral' :: Token -> Parser Expression
-numberLiteral' Token { literal = Scanner.NumberValue y } = return $ Literal (Parser.NumberValue y)
+numberLiteral' Token { literal = NumberValue y } = return $ Literal (NumberValue y)
 numberLiteral' t = reportErrorWithToken "Failed to parse numeric literal" t
 
 stringLiteral' :: Token -> Parser Expression
-stringLiteral' Token { literal = Scanner.StringValue y } = return $ Literal (Parser.StringValue y)
+stringLiteral' Token { literal = StringValue y } = return $ Literal (StringValue y)
 stringLiteral' t = reportErrorWithToken "Failed to parse string literal" t
 
 group :: Parser Expression

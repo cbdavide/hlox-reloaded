@@ -9,14 +9,9 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as T
 import Test.Hspec ( describe, it, shouldBe, Spec )
 
-import Scanner
-    ( scanTokens
-    , Error(..)
-    , ScannerResult
-    , Token(..)
-    , TokenType(..)
-    , Value(..)
-    )
+import Literal (LiteralValue (..))
+import Token ( Token (..), TokenType (..) )
+import Scanner ( scanTokens, Error(..), ScannerResult )
 
 scannerSpecs :: Spec
 scannerSpecs = describe "Scanner" $ do
@@ -101,7 +96,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=1
             , tokenColumn=1
-            , literal=EmptyValue
+            , literal=Nil
             , lexeme="("
             }
 
@@ -110,7 +105,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=2
             , tokenColumn=2
-            , literal=EmptyValue
+            , literal=Nil
             , lexeme="=="
             }
 
@@ -119,7 +114,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=1
             , tokenColumn=4
-            , literal=EmptyValue
+            , literal=Nil
             , lexeme=")"
             }
 
