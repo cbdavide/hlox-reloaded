@@ -38,4 +38,3 @@ data Token = Token
     , tokenColumn   :: Int
     , tokenLength   :: Int
     } deriving (Eq, Show)
-
