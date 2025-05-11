@@ -3,13 +3,15 @@
 module Parser (
   Expression (..)
 , ParseError (..)
+, Stmt (Expression, Print)
 , parse
+, parseExpression
 ) where
 
-import Control.Monad (void)
+import Control.Monad (void, unless)
 import Control.Monad.Except ( ExceptT, MonadError(..), runExceptT )
 import Control.Monad.Extra (ifM, (||^), whenM)
-import Control.Monad.State (evalState, State, gets, modify)
+import Control.Monad.State (evalState, State, gets, modify, execState)
 import Data.List (uncons)
 import qualified Data.Text as T
 import Literal ( LiteralValue (..) )
@@ -21,9 +23,16 @@ data Expression = Literal LiteralValue
     | Grouping Expression
     deriving (Eq, Show)
 
+data Stmt = Expression Expression
+    | Print Expression
+    -- Used to recover from errors
+    | NOP
+    deriving (Eq, Show)
+
 data ParserContext = ParserContext
     { source :: [Token]
-    , output :: Maybe Expression
+    , errors :: [ParseError]
+    , outputs :: [Stmt]
     } deriving (Eq, Show)
 
 data ParseError = ParseError
@@ -35,6 +44,18 @@ type Parser a = ExceptT ParseError (State ParserContext) a
 
 modifySource :: [Token] -> Parser ()
 modifySource ts = modify (\x -> x { source = ts })
+
+modifyErrors :: [ParseError] -> Parser ()
+modifyErrors es = modify (\x -> x { errors = es })
+
+modifyOutputs :: [Stmt] -> Parser ()
+modifyOutputs os = modify (\x -> x { outputs = os })
+
+appendError :: ParseError -> Parser ()
+appendError e = gets errors >>= (\x -> modifyErrors (x ++ [e]))
+
+appendOutput :: Stmt -> Parser ()
+appendOutput o = gets outputs >>= (\x -> modifyOutputs (x ++ [o]))
 
 reportError :: T.Text -> Parser a
 reportError msg = peek >>= \mt -> throwError $ ParseError {errorMessage=msg, token=mt}
@@ -70,6 +91,21 @@ match ts = maybe False ((`elem` ts) . tokenType) <$> peek
 
 isAtEnd :: Parser Bool
 isAtEnd = gets (null . source)
+
+statement :: Parser Stmt
+statement = ifM (match [PRINT]) printStmt expressionStmt
+
+printStmt :: Parser Stmt
+printStmt = do
+    expr <- unsafeAdvance >> expression
+    consume SEMICOLON "Expected ';' after value"
+    return $ Print expr
+
+expressionStmt :: Parser Stmt
+expressionStmt = do
+    expr <- expression
+    consume SEMICOLON "Expected ';' after value"
+    return $ Expression expr
 
 expression :: Parser Expression
 expression = equality
@@ -137,6 +173,26 @@ many1 rule tokenTypes = rule >>= go
                 (return expr) 
                 (Binary expr <$> unsafeAdvance <*> rule >>= go)
 
-parse :: [Token] -> Either ParseError Expression
-parse tokens = evalState (runExceptT expression) ctx
-    where ctx = ParserContext {source=tokens, output=Nothing}
+parseExpression :: [Token] -> Either ParseError Expression
+parseExpression tokens = evalState (runExceptT expression) ctx
+    where ctx = ParserContext {source=tokens, outputs=[], errors=[]}
+
+parseStmts :: Parser ()
+parseStmts =
+    ifM isAtEnd (return ()) $ do
+        stmt <- catchError statement handleError
+        -- NOP is a flag value that indicates there was an error
+        -- parsing a statement, in that case we omit saving it
+        -- in the results.
+        unless (stmt == NOP) (appendOutput stmt)
+        parseStmts
+
+handleError :: ParseError -> Parser Stmt
+handleError err = appendError err >> synchronize >> return NOP
+
+parse :: [Token] -> Either [ParseError] [Stmt]
+parse tokens = if null errors' then Right outputs' else Left errors'
+    where ctx = ParserContext {source=tokens, outputs=[], errors=[]}
+          errors' = errors result
+          outputs' = outputs result
+          result = execState (runExceptT parseStmts) ctx
