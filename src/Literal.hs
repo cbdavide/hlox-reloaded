@@ -1,3 +1,4 @@
+{-# LANGUAGE InstanceSigs #-}
 module Literal (
   LiteralValue (..)
 , isNumber
@@ -12,7 +13,7 @@ data LiteralValue =
     | StringValue T.Text
     | BooleanValue Bool
     | Nil
-    deriving (Eq, Show)
+    deriving (Eq)
 
 isTruthy :: LiteralValue -> Bool
 isTruthy Nil = False
@@ -26,3 +27,15 @@ isNumber _ = False
 isString :: LiteralValue -> Bool
 isString (StringValue _) = True
 isString _ = False
+
+instance Show LiteralValue where
+
+    show :: LiteralValue -> String
+    show Nil = "nil"
+    show (StringValue v) = T.unpack v
+    show (BooleanValue v) = show v
+    show (NumberValue v) = format v
+        where format :: Float -> String
+              format x
+                | x == fromInteger (round x) = show (round x :: Int)
+                | otherwise = show x

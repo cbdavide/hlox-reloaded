@@ -23,6 +23,7 @@ data Expression = Literal LiteralValue
     | Grouping Expression
     deriving (Eq, Show)
 
+{-# COMPLETE Expression, Print #-}
 data Stmt = Expression Expression
     | Print Expression
     -- Used to recover from errors

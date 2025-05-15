@@ -3,22 +3,41 @@
 module Interpreter (
   RuntimeError (..)
 , evalExpression
+, interpret
 ) where
 
+import Control.Monad (void)
+import Control.Monad.Except ( ExceptT, throwError, runExceptT )
 import qualified Data.Text as T
 import Literal ( LiteralValue (..), isNumber, isString, isTruthy  )
-import Parser ( Expression (..) )
+import Parser ( Expression (..), Stmt (..) )
 import Token ( Token (..), TokenType (..) )
+import Control.Monad.IO.Class (MonadIO(liftIO))
 
 data RuntimeError = RuntimeError
     { token         :: Token
     , errorMessage  :: T.Text
     } deriving (Eq, Show)
 
-type EvalResult a = Either RuntimeError a
+type EvalResult a = ExceptT RuntimeError IO a
 
 reportError :: Token -> T.Text -> EvalResult a
-reportError t msg = Left $ RuntimeError t msg
+reportError t msg = throwError $ RuntimeError t msg
+
+interpret :: [Stmt] -> IO ()
+interpret stmts = do
+    result <- runExceptT (mapM_ evalStmt stmts)
+
+    case result of
+        Right _ -> return ()
+        Left err -> print err
+
+evalStmt :: Stmt -> EvalResult ()
+evalStmt (Expression expr) = void $ evalExpression expr
+evalStmt (Print expr) = do
+    val <- evalExpression expr
+    liftIO $ print (show val)
+    return ()
 
 evalExpression :: Expression -> EvalResult LiteralValue
 evalExpression (Literal a) = return a
