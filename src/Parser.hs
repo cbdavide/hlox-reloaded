@@ -16,16 +16,19 @@ import Data.List (uncons)
 import qualified Data.Text as T
 import Literal ( LiteralValue (..) )
 import Token ( Token (..), TokenType (..) )
+import Data.Maybe (fromJust)
 
 data Expression = Literal LiteralValue
     | Unary Token Expression
     | Binary Expression Token Expression
     | Grouping Expression
+    | Variable Token
     deriving (Eq, Show)
 
 {-# COMPLETE Expression, Print #-}
 data Stmt = Expression Expression
     | Print Expression
+    | Var Token Expression
     -- Used to recover from errors
     | NOP
     deriving (Eq, Show)
@@ -93,19 +96,29 @@ match ts = maybe False ((`elem` ts) . tokenType) <$> peek
 isAtEnd :: Parser Bool
 isAtEnd = gets (null . source)
 
+declaration :: Parser Stmt
+declaration = ifM (match [VAR]) varDeclaration statement
+
+varDeclaration :: Parser Stmt
+varDeclaration = do
+    identifier <- unsafeAdvance >> consume IDENTIFIER "Expected variable name"
+    expr <- ifM (match [EQUAL]) expression (return $ Literal Nil)
+    _ <- consume SEMICOLON "Expected ';' after variable declaration"
+    return $ Var identifier expr
+
 statement :: Parser Stmt
 statement = ifM (match [PRINT]) printStmt expressionStmt
 
 printStmt :: Parser Stmt
 printStmt = do
     expr <- unsafeAdvance >> expression
-    consume SEMICOLON "Expected ';' after value"
+    _ <- consume SEMICOLON "Expected ';' after value"
     return $ Print expr
 
 expressionStmt :: Parser Stmt
 expressionStmt = do
     expr <- expression
-    consume SEMICOLON "Expected ';' after value"
+    _ <- consume SEMICOLON "Expected ';' after value"
     return $ Expression expr
 
 expression :: Parser Expression
@@ -135,6 +148,7 @@ primary = advance >>= \case
             NIL -> literal' Nil
             NUMBER -> numberLiteral' t
             STRING -> stringLiteral' t
+            IDENTIFIER -> return $ Variable t
             LEFT_PAREN -> group
             _ -> reportErrorWithToken "Expected expression" t
 
@@ -152,11 +166,11 @@ stringLiteral' t = reportErrorWithToken "Failed to parse string literal" t
 group :: Parser Expression
 group = do
     expr <- expression
-    consume RIGHT_PAREN "Expected ')' after expression"
+    _ <- consume RIGHT_PAREN "Expected ')' after expression"
     return $ Grouping expr
 
-consume :: TokenType -> T.Text -> Parser ()
-consume tp msg = ifM (match [tp]) (void advance) (reportError msg)
+consume :: TokenType -> T.Text -> Parser Token
+consume tp msg = ifM (match [tp]) (fromJust <$> advance) (reportError msg)
 
 -- | Discards tokens until it thinks it has found a statement boundary.
 synchronize :: Parser ()
@@ -181,7 +195,7 @@ parseExpression tokens = evalState (runExceptT expression) ctx
 parseStmts :: Parser ()
 parseStmts =
     ifM isAtEnd (return ()) $ do
-        stmt <- catchError statement handleError
+        stmt <- catchError declaration handleError
         -- NOP is a flag value that indicates there was an error
         -- parsing a statement, in that case we omit saving it
         -- in the results.
