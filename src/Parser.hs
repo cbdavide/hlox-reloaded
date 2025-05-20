@@ -3,7 +3,7 @@
 module Parser (
   Expression (..)
 , ParseError (..)
-, Stmt (Expression, Print)
+, Stmt (Expression, Print, Var)
 , parse
 , parseExpression
 ) where
@@ -25,7 +25,7 @@ data Expression = Literal LiteralValue
     | Variable Token
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print #-}
+{-# COMPLETE Expression, Print, Var #-}
 data Stmt = Expression Expression
     | Print Expression
     | Var Token Expression
