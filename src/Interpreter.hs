@@ -8,6 +8,7 @@ module Interpreter (
 
 import Control.Monad (void)
 import Control.Monad.Except ( ExceptT, throwError, runExceptT )
+import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.State ( StateT, evalStateT, modify, gets )
 import Data.Map (Map)
 import qualified Data.Map as M
@@ -16,7 +17,6 @@ import qualified Data.Text as T
 import Literal ( LiteralValue (..), isNumber, isString, isTruthy  )
 import Parser ( Expression (..), Stmt (..) )
 import Token ( Token (..), TokenType (..) )
-import Control.Monad.IO.Class (MonadIO(liftIO))
 
 type Environment = Map Text LiteralValue
 
@@ -34,10 +34,17 @@ type Interpreter a = ExceptT RuntimeError (StateT InterpreterContext IO) a
 modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x { environment = env })
 
-environmentDefine :: Text -> LiteralValue -> Interpreter ()
-environmentDefine name value = do
+environmentDefine :: Token -> LiteralValue -> Interpreter ()
+environmentDefine tkn value = do
     env <- gets environment
-    modifyEnvironment $ M.insert name value env
+    modifyEnvironment $ M.insert (lexeme tkn) value env
+
+environmentGet :: Token -> Interpreter LiteralValue
+environmentGet tkn = do
+    env <- gets environment
+    case M.lookup (lexeme tkn) env of
+        Just v -> return v
+        Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
 
 reportError :: Token -> T.Text -> Interpreter a
 reportError t msg = throwError $ RuntimeError t msg
@@ -66,13 +73,14 @@ evalPrintStmt :: Expression -> Interpreter ()
 evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print $ show val))
 
 evalVarStmt :: Token -> Expression -> Interpreter ()
-evalVarStmt tkn expr = evalExpression expr >>= \val -> environmentDefine (lexeme tkn) val
+evalVarStmt tkn expr = evalExpression expr >>= \val -> environmentDefine tkn val
 
 evalExpression :: Expression -> Interpreter LiteralValue
 evalExpression (Literal a) = return a
 evalExpression (Grouping expr) = evalExpression expr
 evalExpression (Unary op expr) = evalUnaryExpression op expr
 evalExpression (Binary v1 op v2) = evalBinaryExpression op v1 v2
+evalExpression (Variable tkn) = environmentGet tkn
 
 evalUnaryExpression :: Token -> Expression -> Interpreter LiteralValue
 evalUnaryExpression t expr = evalExpression expr >>= \val ->
