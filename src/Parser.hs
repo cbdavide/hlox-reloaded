@@ -6,6 +6,7 @@ module Parser (
 , Stmt (Expression, Print, Var)
 , parse
 , parseExpression
+, parseStmt
 ) where
 
 import Control.Monad (void, unless)
@@ -26,10 +27,11 @@ data Expression = Literal LiteralValue
     | Assign Token Expression
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print, Var #-}
+{-# COMPLETE Expression, Print, Var, Block #-}
 data Stmt = Expression Expression
     | Print Expression
     | Var Token Expression
+    | Block [Stmt]
     -- Used to recover from errors
     | NOP
     deriving (Eq, Show)
@@ -103,7 +105,7 @@ declaration = ifM (match [VAR]) varDeclaration statement
 varDeclaration :: Parser Stmt
 varDeclaration = do
     identifier <- unsafeAdvance >> consume IDENTIFIER "Expected variable name"
-    expr <- ifM (match [EQUAL]) expression (return $ Literal Nil)
+    expr <- ifM (match [EQUAL]) (unsafeAdvance >> expression) (return $ Literal Nil)
     _ <- consume SEMICOLON "Expected ';' after variable declaration"
     return $ Var identifier expr
 
@@ -201,10 +203,6 @@ many1 rule tokenTypes = rule >>= go
                 (return expr) 
                 (Binary expr <$> unsafeAdvance <*> rule >>= go)
 
-parseExpression :: [Token] -> Either ParseError Expression
-parseExpression tokens = evalState (runExceptT expression) ctx
-    where ctx = ParserContext {source=tokens, outputs=[], errors=[]}
-
 parseStmts :: Parser ()
 parseStmts =
     ifM isAtEnd (return ()) $ do
@@ -224,3 +222,11 @@ parse tokens = if null errors' then Right outputs' else Left errors'
           errors' = errors result
           outputs' = outputs result
           result = execState (runExceptT parseStmts) ctx
+
+parseExpression :: [Token] -> Either ParseError Expression
+parseExpression tokens = evalState (runExceptT expression) ctx
+    where ctx = ParserContext {source=tokens, outputs=[], errors=[]}
+
+parseStmt :: [Token] -> Either ParseError Stmt
+parseStmt tokens = evalState (runExceptT declaration) ctx
+    where ctx = ParserContext {source=tokens, outputs=[], errors=[]}
