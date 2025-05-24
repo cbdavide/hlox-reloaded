@@ -23,6 +23,7 @@ data Expression = Literal LiteralValue
     | Binary Expression Token Expression
     | Grouping Expression
     | Variable Token
+    | Assign Token Expression
     deriving (Eq, Show)
 
 {-# COMPLETE Expression, Print, Var #-}
@@ -122,7 +123,19 @@ expressionStmt = do
     return $ Expression expr
 
 expression :: Parser Expression
-expression = equality
+expression = assignment
+
+assignment :: Parser Expression
+assignment = do
+    expr <- equality
+
+    ifM (not <$> match [EQUAL]) (return expr) $ do
+        equals <- unsafeAdvance
+        value <- assignment
+
+        case expr of
+            Variable name -> return $ Assign name value
+            _ -> reportErrorWithToken "Invalid assignment target" equals
 
 equality :: Parser Expression
 equality = many1 comparison [BANG_EQUAL, EQUAL_EQUAL]

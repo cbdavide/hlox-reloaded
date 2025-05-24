@@ -44,7 +44,15 @@ environmentGet tkn = do
     env <- gets environment
     case M.lookup (lexeme tkn) env of
         Just v -> return v
+        -- TODO: Find a better way of formatting the error message
         Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
+
+environmentAssign :: Token -> LiteralValue -> Interpreter ()
+environmentAssign tkn value = gets environment >>= \env -> do
+    if M.member (lexeme tkn) env
+    then modifyEnvironment $ M.insert (lexeme tkn) value env
+    -- TODO: Find a better way of formatting the error message
+    else reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
 
 reportError :: Token -> T.Text -> Interpreter a
 reportError t msg = throwError $ RuntimeError t msg
@@ -81,6 +89,7 @@ evalExpression (Grouping expr) = evalExpression expr
 evalExpression (Unary op expr) = evalUnaryExpression op expr
 evalExpression (Binary v1 op v2) = evalBinaryExpression op v1 v2
 evalExpression (Variable tkn) = environmentGet tkn
+evalExpression (Assign tkn expr) = evalAssignment tkn expr
 
 evalUnaryExpression :: Token -> Expression -> Interpreter LiteralValue
 evalUnaryExpression t expr = evalExpression expr >>= \val ->
@@ -104,6 +113,12 @@ evalBinaryExpression op x y = evalExpression x >>= \a -> evalExpression y >>= \b
         BANG_EQUAL -> return $ BooleanValue (a /= b)
         EQUAL_EQUAL -> return $ BooleanValue (a == b)
         _ -> reportError op "binary expression with unexpected operator"
+
+evalAssignment :: Token -> Expression -> Interpreter LiteralValue
+evalAssignment tkn expr = do
+    val <- evalExpression expr
+    environmentAssign tkn val
+    return val
 
 evalAddition :: Token -> LiteralValue -> LiteralValue -> Interpreter LiteralValue
 evalAddition op x y
