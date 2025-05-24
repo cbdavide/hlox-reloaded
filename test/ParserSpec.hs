@@ -4,7 +4,7 @@ module ParserSpec ( parserSpecs ) where
 
 import Control.Monad ( forM_ )
 import Literal ( LiteralValue (..) )
-import Parser ( Expression (..), ParseError (..), parseExpression )
+import Parser ( Expression (..), ParseError (..), Stmt(..), parseExpression, parseStmt )
 import Test.Hspec ( describe, it, shouldBe, Spec, Expectation, expectationFailure )
 import Token ( Token (..), TokenType (..) )
 import qualified Data.Text as T
@@ -31,6 +31,12 @@ pattern StrExpr t = Literal (StringValue t)
 createToken :: TokenType -> Token
 createToken tp = baseToken { tokenType = tp }
 
+semicolon :: Token
+semicolon = createToken SEMICOLON
+
+equal :: Token
+equal = createToken EQUAL
+
 createTokens :: [TokenType] -> [Token]
 createTokens tps = createToken <$> tps
 
@@ -50,10 +56,11 @@ shouldFailTo (Left err) expected  =  err `shouldBe` expected
 
 parserSpecs :: Spec
 parserSpecs = describe "Parser" $ do
-    spec_parse
+    spec_parseExpressions
+    spec_parseStmts
 
-spec_parse :: Spec
-spec_parse = describe "parseExpression" $ do
+spec_parseExpressions :: Spec
+spec_parseExpressions = describe "parseExpression" $ do
 
     describe "primary rule" $ do
         
@@ -63,6 +70,7 @@ spec_parse = describe "parseExpression" $ do
                     , (createToken NIL, Literal Nil)
                     , (createNumericToken 25, NumExpr 25)
                     , (createStringToken "hello", StrExpr "hello")
+                    , (createToken IDENTIFIER, Variable $ createToken IDENTIFIER)
                     ]
 
         forM_ cases $ \(tp', expr') -> do
@@ -200,6 +208,27 @@ spec_parse = describe "parseExpression" $ do
 
             parseExpression tokens `shouldParseTo` expectedExpression
 
+    describe "assignment rule" $ do
+
+        it "success - parses 'a = 10'" $ do
+            let variable = createToken IDENTIFIER
+                tokens = [variable, createToken EQUAL, createNumericToken 10]
+                expectedExpression = Assign variable (NumExpr 10)
+
+            parseExpression tokens `shouldParseTo` expectedExpression
+
+        it "success - parses 'a = b = 16'" $ do
+            let variable = createToken IDENTIFIER
+                tokens = [variable, equal, variable, equal, createNumericToken 16]
+                expectedExpression = Assign variable (Assign variable (NumExpr 16))
+
+            parseExpression tokens `shouldParseTo` expectedExpression
+
+        it "fails - invalid assignment target '2 = 16'" $ do
+            let tokens = [createNumericToken 2, equal, createNumericToken 16]
+                expectedError = ParseError "Invalid assignment target" (Just equal)
+            parseExpression tokens `shouldFailTo` expectedError
+
     describe "invalid expressions" $ do
 
         it "fails - empty tokens input" $ do
@@ -221,3 +250,62 @@ spec_parse = describe "parseExpression" $ do
         it "fails - invalid literal" $ do
             let tok = createToken DOT
             parseExpression [tok] `shouldFailTo` ParseError "Expected expression"(Just tok)
+
+spec_parseStmts :: Spec
+spec_parseStmts = describe "parseStmt" $ do
+
+    describe "expression statment" $ do
+
+        it "success - valid expression statment" $ do
+            let tokens = [createStringToken "Hello", semicolon]
+                expectedExpr = StrExpr "Hello"
+
+            parseStmt tokens `shouldParseTo` Expression expectedExpr
+
+        it "fails - invalid expression statment" $ do
+            let tokens = [createStringToken "Hello"]
+            parseStmt tokens `shouldFailTo` ParseError "Expected ';' after value" Nothing
+
+    describe "print statment" $ do
+
+        it "success - valid print statment" $ do
+            let tokens = [createToken PRINT, createStringToken "Hello", semicolon]
+                expectedExpr = StrExpr "Hello"
+
+            parseStmt tokens `shouldParseTo` Print expectedExpr
+
+        it "fails - invalid print statment" $ do
+            let tokens = [createToken PRINT, createStringToken "Hello"]
+            parseStmt tokens `shouldFailTo` ParseError "Expected ';' after value" Nothing
+
+    describe "var statment" $ do
+
+        it "success - assignment statement with value" $ do
+            let identifier = createToken IDENTIFIER
+                tokens =
+                    [ createToken VAR
+                    , identifier
+                    , createToken EQUAL
+                    , createNumericToken 10
+                    , semicolon
+                    ]
+
+            parseStmt tokens `shouldParseTo` Var identifier (NumExpr 10)
+
+        it "success - assignment statement without value" $ do
+            let identifier = createToken IDENTIFIER
+                tokens = [ createToken VAR , identifier , semicolon ]
+
+            parseStmt tokens `shouldParseTo` Var identifier (Literal Nil)
+
+        it "fails - assignment statement without identifier" $ do
+            let strToken = createStringToken "hello"
+                tokens = [ createToken VAR , strToken, semicolon ]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected variable name" (Just strToken)
+
+        it "fails - invalid assignment statement" $ do
+            let identifier = createToken IDENTIFIER
+                tokens = [ createToken VAR , identifier ]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected ';' after variable declaration" Nothing
