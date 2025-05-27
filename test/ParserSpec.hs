@@ -278,6 +278,30 @@ spec_parseStmts = describe "parseStmt" $ do
             let tokens = [createToken PRINT, createStringToken "Hello"]
             parseStmt tokens `shouldFailTo` ParseError "Expected ';' after value" Nothing
 
+    describe "block statement" $ do
+
+        it "success - valid statement block" $ do
+            let tokens =
+                    [ createToken LEFT_BRACE
+                    , createToken PRINT, createStringToken "Hello, ", semicolon
+                    , createToken PRINT, createStringToken "World!", semicolon
+                    , createToken RIGHT_BRACE
+                    ]
+
+                expectedStmt = Block [Print (StrExpr "Hello, "), Print (StrExpr "World!")]
+
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "fails - statement block with missing '}'" $ do
+            let tokens =
+                    [ createToken LEFT_BRACE
+                    , createToken PRINT, createStringToken "Hello, ", semicolon
+                    , createToken PRINT, createStringToken "World!", semicolon
+                    -- mising '}'
+                    ]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected '}' after a block" Nothing
+
     describe "var statment" $ do
 
         it "success - assignment statement with value" $ do
