@@ -3,7 +3,7 @@
 module Parser (
   Expression (..)
 , ParseError (..)
-, Stmt (Expression, Print, Var)
+, Stmt (Expression, Print, Var, Block)
 , parse
 , parseExpression
 , parseStmt
@@ -110,11 +110,16 @@ varDeclaration = do
     return $ Var identifier expr
 
 statement :: Parser Stmt
-statement = ifM (match [PRINT]) printStmt expressionStmt
+statement = peek >>= \case
+    Nothing -> reportError "Unexpected end of tokens"
+    Just tkn -> case tokenType tkn of
+        PRINT -> advance >> printStmt
+        LEFT_BRACE -> advance >> block
+        _ -> expressionStmt
 
 printStmt :: Parser Stmt
 printStmt = do
-    expr <- unsafeAdvance >> expression
+    expr <- expression
     _ <- consume SEMICOLON "Expected ';' after value"
     return $ Print expr
 
@@ -123,6 +128,12 @@ expressionStmt = do
     expr <- expression
     _ <- consume SEMICOLON "Expected ';' after value"
     return $ Expression expr
+
+block :: Parser Stmt
+block = Block . reverse <$> go []
+    where go xs = ifM (match [RIGHT_BRACE] ||^ isAtEnd)
+              (consume RIGHT_BRACE "Expected '}' after a block" >> return xs)
+              (declaration >>= \x -> go (x:xs))
 
 expression :: Parser Expression
 expression = assignment
