@@ -10,15 +10,12 @@ import Control.Monad (void)
 import Control.Monad.Except ( ExceptT, throwError, runExceptT )
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.State ( StateT, evalStateT, modify, gets )
-import Data.Map (Map)
-import qualified Data.Map as M
-import Data.Text (Text)
 import qualified Data.Text as T
+import Environment ( Environment, createEnv, envLookup, envAssign, envDefine )
 import Literal ( LiteralValue (..), isNumber, isString, isTruthy  )
 import Parser ( Expression (..), Stmt (..) )
 import Token ( Token (..), TokenType (..) )
 
-type Environment = Map Text LiteralValue
 
 newtype InterpreterContext = InterpreterContext
     { environment :: Environment
@@ -35,24 +32,24 @@ modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x { environment = env })
 
 environmentDefine :: Token -> LiteralValue -> Interpreter ()
-environmentDefine tkn value = do
-    env <- gets environment
-    modifyEnvironment $ M.insert (lexeme tkn) value env
+environmentDefine tkn value = gets environment >>= \env -> do
+    case envDefine (lexeme tkn) value env of
+        Just e -> modifyEnvironment e
+        Nothing -> reportError tkn "internal error: there is no environment defined"
 
 environmentGet :: Token -> Interpreter LiteralValue
-environmentGet tkn = do
-    env <- gets environment
-    case M.lookup (lexeme tkn) env of
+environmentGet tkn = gets environment >>= \env -> do
+    case envLookup (lexeme tkn) env of
         Just v -> return v
         -- TODO: Find a better way of formatting the error message
         Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
 
 environmentAssign :: Token -> LiteralValue -> Interpreter ()
 environmentAssign tkn value = gets environment >>= \env -> do
-    if M.member (lexeme tkn) env
-    then modifyEnvironment $ M.insert (lexeme tkn) value env
-    -- TODO: Find a better way of formatting the error message
-    else reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
+    case envAssign (lexeme tkn) value env of
+        Just e -> modifyEnvironment e
+        -- TODO: Find a better way of formatting the error message
+        Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
 
 reportError :: Token -> T.Text -> Interpreter a
 reportError t msg = throwError $ RuntimeError t msg
@@ -60,7 +57,7 @@ reportError t msg = throwError $ RuntimeError t msg
 interpret :: [Stmt] -> IO ()
 interpret stmts = do
     result <- evalStateT (runExceptT (mapM_ evalStmt stmts) )
-                         (InterpreterContext {environment=M.empty})
+                         (InterpreterContext {environment=createEnv})
 
     case result of
         Right _ -> return ()
@@ -70,7 +67,7 @@ interpret stmts = do
 interpretExpression :: Expression -> IO (Either RuntimeError LiteralValue)
 interpretExpression expr =
     evalStateT (runExceptT (evalExpression expr))
-               (InterpreterContext {environment=M.empty})
+               (InterpreterContext {environment=createEnv})
 
 evalStmt :: Stmt -> Interpreter ()
 evalStmt (Expression expr) = void $ evalExpression expr
