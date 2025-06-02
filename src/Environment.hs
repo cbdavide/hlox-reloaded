@@ -4,6 +4,8 @@ module Environment (
 , envAssign
 , envDefine
 , envLookup
+, popFrame
+, pushFrame
 ) where
 
 import Control.Applicative ((<|>))
@@ -17,6 +19,12 @@ type Environment = [Frame]
 
 createEnv :: Environment
 createEnv = [M.empty]
+
+pushFrame :: Environment -> Environment
+pushFrame env = M.empty : env
+
+popFrame :: Environment -> Environment
+popFrame = drop 1
 
 envLookup :: Text -> Environment -> Maybe LiteralValue
 envLookup k = foldr ((<|>) . M.lookup k) Nothing

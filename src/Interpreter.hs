@@ -7,11 +7,11 @@ module Interpreter (
 ) where
 
 import Control.Monad (void)
-import Control.Monad.Except ( ExceptT, throwError, runExceptT )
+import Control.Monad.Except ( ExceptT, throwError, runExceptT, catchError )
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.State ( StateT, evalStateT, modify, gets )
 import qualified Data.Text as T
-import Environment ( Environment, createEnv, envLookup, envAssign, envDefine )
+import Environment ( Environment, createEnv, envLookup, envAssign, envDefine, popFrame, pushFrame )
 import Literal ( LiteralValue (..), isNumber, isString, isTruthy  )
 import Parser ( Expression (..), Stmt (..) )
 import Token ( Token (..), TokenType (..) )
@@ -30,6 +30,12 @@ type Interpreter a = ExceptT RuntimeError (StateT InterpreterContext IO) a
 
 modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x { environment = env })
+
+addEnvironment :: Interpreter ()
+addEnvironment = gets environment >>= modifyEnvironment . pushFrame
+
+removeEnvironment :: Interpreter ()
+removeEnvironment = gets environment >>= modifyEnvironment .popFrame
 
 environmentDefine :: Token -> LiteralValue -> Interpreter ()
 environmentDefine tkn value = gets environment >>= \env -> do
@@ -73,12 +79,19 @@ evalStmt :: Stmt -> Interpreter ()
 evalStmt (Expression expr) = void $ evalExpression expr
 evalStmt (Print expr) = evalPrintStmt expr
 evalStmt (Var tkn expr) = evalVarStmt tkn expr
+evalStmt (Block stmts) = evalBlock stmts
 
 evalPrintStmt :: Expression -> Interpreter ()
 evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print $ show val))
 
 evalVarStmt :: Token -> Expression -> Interpreter ()
 evalVarStmt tkn expr = evalExpression expr >>= \val -> environmentDefine tkn val
+
+evalBlock :: [Stmt] -> Interpreter ()
+evalBlock stmts = do
+    addEnvironment
+    catchError (mapM_ evalStmt stmts) (\err -> removeEnvironment >> throwError err)
+    removeEnvironment
 
 evalExpression :: Expression -> Interpreter LiteralValue
 evalExpression (Literal a) = return a
