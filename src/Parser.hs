@@ -14,10 +14,10 @@ import Control.Monad.Except ( ExceptT, MonadError(..), runExceptT )
 import Control.Monad.Extra (ifM, (||^), whenM)
 import Control.Monad.State (evalState, State, gets, modify, execState)
 import Data.List (uncons)
+import Data.Maybe (fromJust)
 import qualified Data.Text as T
 import Literal ( LiteralValue (..) )
 import Token ( Token (..), TokenType (..) )
-import Data.Maybe (fromJust)
 
 data Expression = Literal LiteralValue
     | Unary Token Expression

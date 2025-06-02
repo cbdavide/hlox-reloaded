@@ -71,6 +71,7 @@ test-suite hlox-reloaded-test
       InterpreterSpec
       ParserSpec
       ScannerSpec
+      Utils
       Paths_hlox_reloaded
   autogen-modules:
       Paths_hlox_reloaded
