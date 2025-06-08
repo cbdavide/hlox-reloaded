@@ -16,7 +16,6 @@ import Literal ( LiteralValue (..), isNumber, isString, isTruthy  )
 import Parser ( Expression (..), Stmt (..) )
 import Token ( Token (..), TokenType (..) )
 
-
 newtype InterpreterContext = InterpreterContext
     { environment :: Environment
     } deriving (Eq, Show)
@@ -80,6 +79,7 @@ evalStmt (Expression expr) = void $ evalExpression expr
 evalStmt (Print expr) = evalPrintStmt expr
 evalStmt (Var tkn expr) = evalVarStmt tkn expr
 evalStmt (Block stmts) = evalBlock stmts
+evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 
 evalPrintStmt :: Expression -> Interpreter ()
 evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print $ show val))
@@ -92,6 +92,14 @@ evalBlock stmts = do
     addEnvironment
     catchError (mapM_ evalStmt stmts) (\err -> removeEnvironment >> throwError err)
     removeEnvironment
+
+evalIfStmt :: Expression -> Stmt -> Maybe Stmt -> Interpreter ()
+evalIfStmt cond thenBranch elseBranch = do
+    result <- isTruthy <$> evalExpression cond
+
+    if result
+        then evalStmt thenBranch
+        else maybe (return ()) evalStmt elseBranch
 
 evalExpression :: Expression -> Interpreter LiteralValue
 evalExpression (Literal a) = return a
