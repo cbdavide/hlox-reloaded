@@ -3,7 +3,7 @@
 module Parser (
   Expression (..)
 , ParseError (..)
-, Stmt (Expression, Print, Var, Block)
+, Stmt (Expression, Print, Var, Block, IfStmt)
 , parse
 , parseExpression
 , parseStmt
@@ -27,11 +27,12 @@ data Expression = Literal LiteralValue
     | Assign Token Expression
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print, Var, Block #-}
+{-# COMPLETE Expression, Print, Var, Block, IfStmt #-}
 data Stmt = Expression Expression
     | Print Expression
     | Var Token Expression
     | Block [Stmt]
+    | IfStmt Expression Stmt (Maybe Stmt)
     -- Used to recover from errors
     | NOP
     deriving (Eq, Show)
@@ -113,6 +114,7 @@ statement :: Parser Stmt
 statement = peek >>= \case
     Nothing -> reportError "Unexpected end of tokens"
     Just tkn -> case tokenType tkn of
+        IF -> advance >> ifStmt
         PRINT -> advance >> printStmt
         LEFT_BRACE -> advance >> block
         _ -> expressionStmt
@@ -128,6 +130,16 @@ expressionStmt = do
     expr <- expression
     _ <- consume SEMICOLON "Expected ';' after value"
     return $ Expression expr
+
+ifStmt :: Parser Stmt
+ifStmt = do
+    _ <- consume LEFT_PAREN "Expected '(' after 'if'"
+    condition <- expression
+    _ <- consume RIGHT_PAREN  "Expected ')' after 'if'"
+
+    IfStmt condition
+        <$> statement
+        <*> ifM (match [ELSE]) (Just <$> (advance >> statement)) (return Nothing)
 
 block :: Parser Stmt
 block = Block . reverse <$> go []
