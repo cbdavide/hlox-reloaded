@@ -4,6 +4,10 @@ module Utils (
   bang
 , minus
 , plus
+, andToken
+, orToken
+, true
+, false
 , numExpr
 , strExpr
 , boolExpr
@@ -36,6 +40,18 @@ bang = createToken BANG
 
 plus :: Token
 plus = createToken PLUS
+
+andToken :: Token
+andToken = createToken AND
+
+orToken :: Token
+orToken = createToken OR
+
+true :: Token
+true = createToken TRUE
+
+false :: Token
+false = createToken FALSE
 
 boolExpr :: Bool -> Expression
 boolExpr b = Literal (BooleanValue b)

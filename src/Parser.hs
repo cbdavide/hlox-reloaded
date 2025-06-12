@@ -21,6 +21,7 @@ import Token ( Token (..), TokenType (..) )
 
 data Expression = Literal LiteralValue
     | Unary Token Expression
+    | Logical Expression Token Expression
     | Binary Expression Token Expression
     | Grouping Expression
     | Variable Token
@@ -152,7 +153,7 @@ expression = assignment
 
 assignment :: Parser Expression
 assignment = do
-    expr <- equality
+    expr <- orExpr
 
     ifM (not <$> match [EQUAL]) (return expr) $ do
         equals <- unsafeAdvance
@@ -162,17 +163,23 @@ assignment = do
             Variable name -> return $ Assign name value
             _ -> reportErrorWithToken "Invalid assignment target" equals
 
+orExpr :: Parser Expression
+orExpr = manyLogical1 andExpr [OR]
+
+andExpr :: Parser Expression
+andExpr = manyLogical1 equality [AND]
+
 equality :: Parser Expression
-equality = many1 comparison [BANG_EQUAL, EQUAL_EQUAL]
+equality = manyBinary1 comparison [BANG_EQUAL, EQUAL_EQUAL]
 
 comparison :: Parser Expression
-comparison = many1 term [GREATER, GREATER_EQUAL, LESS, LESS_EQUAL]
+comparison = manyBinary1 term [GREATER, GREATER_EQUAL, LESS, LESS_EQUAL]
 
 term :: Parser Expression
-term = many1 factor [MINUS, PLUS]
+term = manyBinary1 factor [MINUS, PLUS]
 
 factor :: Parser Expression
-factor = many1 unary [SLASH, STAR]
+factor = manyBinary1 unary [SLASH, STAR]
 
 unary :: Parser Expression
 unary = ifM (not <$> match [BANG, MINUS]) primary (Unary <$> unsafeAdvance <*> unary)
@@ -219,12 +226,19 @@ synchronize = do
         (void advance) -- consume the token, next one is the start of a statement
         (whenM (not <$> (isAtEnd ||^ match statement_start)) (advance >> synchronize))
 
-many1 :: Parser Expression -> [TokenType] -> Parser Expression
-many1 rule tokenTypes = rule >>= go
+manyBinary1 :: Parser Expression -> [TokenType] -> Parser Expression
+manyBinary1 rule tokenTypes = rule >>= go
     where go expr =
-            ifM (not <$> match tokenTypes) 
-                (return expr) 
+            ifM (not <$> match tokenTypes)
+                (return expr)
                 (Binary expr <$> unsafeAdvance <*> rule >>= go)
+
+manyLogical1 :: Parser Expression -> [TokenType] -> Parser Expression
+manyLogical1 rule tokenTypes = rule >>= go
+    where go expr =
+            ifM (not <$> match tokenTypes)
+                (return expr)
+                (Logical expr <$> unsafeAdvance <*> rule >>= go)
 
 parseStmts :: Parser ()
 parseStmts =
