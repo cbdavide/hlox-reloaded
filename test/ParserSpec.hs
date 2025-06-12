@@ -3,11 +3,12 @@
 module ParserSpec ( parserSpecs ) where
 
 import Control.Monad ( forM_ )
+import qualified Data.Text as T
 import Literal ( LiteralValue (..) )
 import Parser ( Expression (..), ParseError (..), Stmt(..), parseExpression, parseStmt )
 import Test.Hspec ( describe, it, shouldBe, Spec, Expectation, expectationFailure )
 import Token ( Token (..), TokenType (..) )
-import qualified Data.Text as T
+import Utils
 
 baseToken :: Token
 baseToken = Token 
@@ -228,6 +229,30 @@ spec_parseExpressions = describe "parseExpression" $ do
             let tokens = [createNumericToken 2, equal, createNumericToken 16]
                 expectedError = ParseError "Invalid assignment target" (Just equal)
             parseExpression tokens `shouldFailTo` expectedError
+
+    describe "logical rule" $ do
+
+        it "success - parses '1 and true'" $ do
+            let tokens = [ createNumericToken 1 , andToken , true ]
+                expectedExpression = Logical (numExpr 1) andToken (boolExpr True)
+            parseExpression tokens `shouldParseTo` expectedExpression
+
+        it "success - parses 'false or \"hello\"" $ do
+            let tokens = [ false , orToken , createStringToken "hello" ]
+                expectedExpression = Logical (boolExpr False) orToken (strExpr "hello")
+            parseExpression tokens `shouldParseTo` expectedExpression
+
+        it "success - parses 'true or false and false or true'" $ do
+            let tokens = [ true, orToken , false, andToken
+                         , false, orToken, true ]
+                expectedExpression =
+                    Logical
+                        (Logical (boolExpr True) orToken (Logical
+                            (boolExpr False) andToken (boolExpr False)))
+                        orToken
+                        (boolExpr True)
+
+            parseExpression tokens `shouldParseTo` expectedExpression
 
     describe "invalid expressions" $ do
 
