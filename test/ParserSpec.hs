@@ -358,3 +358,39 @@ spec_parseStmts = describe "parseStmt" $ do
                 tokens = [ createToken VAR , identifier ]
 
             parseStmt tokens `shouldFailTo` ParseError "Expected ';' after variable declaration" Nothing
+
+    describe "if statement" $ do
+
+        it "success" $ do
+            let tokens =
+                    [ -- if (true)
+                      createToken IF, createToken LEFT_PAREN, true, createToken RIGHT_PAREN
+                      -- 10;
+                    , createNumericToken 10, createToken SEMICOLON
+                    ]
+                expectedStmt = IfStmt (boolExpr True) (Expression $ numExpr 10) Nothing
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "success - with else branch" $ do
+            let tokens =
+                    [ -- if (false)
+                      createToken IF, createToken LEFT_PAREN, false, createToken RIGHT_PAREN
+                      -- 10;
+                    , createNumericToken 10, createToken SEMICOLON
+                      -- else 15;
+                    , createToken ELSE, createNumericToken 15, createToken SEMICOLON
+                    ]
+                expectedStmt = IfStmt (boolExpr False)
+                                      (Expression $ numExpr 10)
+                                      (Just . Expression $ numExpr 15)
+
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "fails - missing expected '(' " $ do
+            let leftBrace = createToken LEFT_BRACE
+                tokens =  [ createToken IF, createToken LEFT_BRACE ]
+            parseStmt tokens `shouldFailTo` ParseError "Expected '(' after 'if'" (Just leftBrace)
+
+        it "fails - missing expected ')' " $ do
+            let tokens =  [ createToken IF, createToken LEFT_PAREN, true ]
+            parseStmt tokens `shouldFailTo` ParseError "Expected ')' after 'if'" Nothing
