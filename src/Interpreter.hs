@@ -108,6 +108,14 @@ evalExpression (Unary op expr) = evalUnaryExpression op expr
 evalExpression (Binary v1 op v2) = evalBinaryExpression op v1 v2
 evalExpression (Variable tkn) = environmentGet tkn
 evalExpression (Assign tkn expr) = evalAssignment tkn expr
+evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
+
+evalLogicalExpression :: Token -> Expression -> Expression -> Interpreter LiteralValue
+evalLogicalExpression op v1 v2 = evalExpression v1 >>= eval
+    where eval val1
+            | tokenType op == OR && isTruthy val1 = return val1
+            | tokenType op == AND && not (isTruthy val1) = return val1
+            | otherwise = evalExpression v2
 
 evalUnaryExpression :: Token -> Expression -> Interpreter LiteralValue
 evalUnaryExpression t expr = evalExpression expr >>= \val ->
