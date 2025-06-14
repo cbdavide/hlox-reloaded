@@ -3,7 +3,7 @@
 module Parser (
   Expression (..)
 , ParseError (..)
-, Stmt (Expression, Print, Var, Block, IfStmt)
+, Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt)
 , parse
 , parseExpression
 , parseStmt
@@ -28,12 +28,13 @@ data Expression = Literal LiteralValue
     | Assign Token Expression
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print, Var, Block, IfStmt #-}
+{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt #-}
 data Stmt = Expression Expression
     | Print Expression
     | Var Token Expression
     | Block [Stmt]
     | IfStmt Expression Stmt (Maybe Stmt)
+    | WhileStmt Expression Stmt
     -- Used to recover from errors
     | NOP
     deriving (Eq, Show)
@@ -117,6 +118,7 @@ statement = peek >>= \case
     Just tkn -> case tokenType tkn of
         IF -> advance >> ifStmt
         PRINT -> advance >> printStmt
+        WHILE -> advance >> whileStmt
         LEFT_BRACE -> advance >> block
         _ -> expressionStmt
 
@@ -141,6 +143,14 @@ ifStmt = do
     IfStmt condition
         <$> statement
         <*> ifM (match [ELSE]) (Just <$> (advance >> statement)) (return Nothing)
+
+whileStmt :: Parser Stmt
+whileStmt = do
+    _ <- consume LEFT_PAREN "Expected '(' after 'while'"
+    condition <- expression
+    _ <- consume RIGHT_PAREN "Expected ')' after 'while'"
+
+    WhileStmt condition <$> statement
 
 block :: Parser Stmt
 block = Block . reverse <$> go []

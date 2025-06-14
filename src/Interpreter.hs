@@ -8,6 +8,7 @@ module Interpreter (
 
 import Control.Monad (void)
 import Control.Monad.Except ( ExceptT, throwError, runExceptT, catchError )
+import Control.Monad.Extra (ifM)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.State ( StateT, evalStateT, modify, gets )
 import qualified Data.Text as T
@@ -80,6 +81,7 @@ evalStmt (Print expr) = evalPrintStmt expr
 evalStmt (Var tkn expr) = evalVarStmt tkn expr
 evalStmt (Block stmts) = evalBlock stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
+evalStmt (WhileStmt cond body) = evalWhileStmt cond body
 
 evalPrintStmt :: Expression -> Interpreter ()
 evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print $ show val))
@@ -100,6 +102,12 @@ evalIfStmt cond thenBranch elseBranch = do
     if result
         then evalStmt thenBranch
         else maybe (return ()) evalStmt elseBranch
+
+evalWhileStmt :: Expression -> Stmt -> Interpreter ()
+evalWhileStmt cond body =
+    ifM (isTruthy <$> evalExpression cond)
+        (evalStmt body >> evalWhileStmt cond body)
+        (return ())
 
 evalExpression :: Expression -> Interpreter LiteralValue
 evalExpression (Literal a) = return a
