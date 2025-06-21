@@ -366,7 +366,7 @@ spec_parseStmts = describe "parseStmt" $ do
                     [ -- if (true)
                       createToken IF, createToken LEFT_PAREN, true, createToken RIGHT_PAREN
                       -- 10;
-                    , createNumericToken 10, createToken SEMICOLON
+                    , createNumericToken 10, semicolon
                     ]
                 expectedStmt = IfStmt (boolExpr True) (Expression $ numExpr 10) Nothing
             parseStmt tokens `shouldParseTo` expectedStmt
@@ -376,9 +376,9 @@ spec_parseStmts = describe "parseStmt" $ do
                     [ -- if (false)
                       createToken IF, createToken LEFT_PAREN, false, createToken RIGHT_PAREN
                       -- 10;
-                    , createNumericToken 10, createToken SEMICOLON
+                    , createNumericToken 10, semicolon
                       -- else 15;
-                    , createToken ELSE, createNumericToken 15, createToken SEMICOLON
+                    , createToken ELSE, createNumericToken 15, semicolon
                     ]
                 expectedStmt = IfStmt (boolExpr False)
                                       (Expression $ numExpr 10)
@@ -388,9 +388,30 @@ spec_parseStmts = describe "parseStmt" $ do
 
         it "fails - missing expected '(' " $ do
             let leftBrace = createToken LEFT_BRACE
-                tokens =  [ createToken IF, createToken LEFT_BRACE ]
+                tokens =  [ createToken IF, leftBrace ]
             parseStmt tokens `shouldFailTo` ParseError "Expected '(' after 'if'" (Just leftBrace)
 
         it "fails - missing expected ')' " $ do
             let tokens =  [ createToken IF, createToken LEFT_PAREN, true ]
             parseStmt tokens `shouldFailTo` ParseError "Expected ')' after 'if'" Nothing
+
+    describe "while statement" $ do
+
+        it "success" $ do
+            let tokens =
+                    [ -- while (false)
+                      createToken WHILE, createToken LEFT_PAREN, false, createToken RIGHT_PAREN
+                      -- "Hello";
+                    , createStringToken "Hello", semicolon
+                    ]
+                expectedStmt = WhileStmt (boolExpr False) (Expression $ strExpr "Hello")
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "fails - missing expected '('" $ do
+            let leftBrace = createToken LEFT_BRACE
+                tokens =  [ createToken WHILE, createToken LEFT_BRACE ]
+            parseStmt tokens `shouldFailTo` ParseError "Expected '(' after 'while'" (Just leftBrace)
+
+        it "fails - missing expected ')'" $ do
+            let tokens =  [ createToken WHILE, createToken LEFT_PAREN, true ]
+            parseStmt tokens `shouldFailTo` ParseError "Expected ')' after 'while'" Nothing
