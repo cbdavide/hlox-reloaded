@@ -116,6 +116,7 @@ statement :: Parser Stmt
 statement = peek >>= \case
     Nothing -> reportError "Unexpected end of tokens"
     Just tkn -> case tokenType tkn of
+        FOR -> advance >> forStmt
         IF -> advance >> ifStmt
         PRINT -> advance >> printStmt
         WHILE -> advance >> whileStmt
@@ -143,6 +144,55 @@ ifStmt = do
     IfStmt condition
         <$> statement
         <*> ifM (match [ELSE]) (Just <$> (advance >> statement)) (return Nothing)
+
+forStmt :: Parser Stmt
+forStmt = do
+    _ <- consume LEFT_PAREN "Expected '(' after 'for'"
+
+    ini <- forInitializerStmt
+    cond <- forConditionExpression
+    incr <- forIncrementExpression
+    body <- statement
+
+    applyForIncrement incr body
+        >>= applyForCondition cond
+        >>= applyForInitializer ini
+
+forInitializerStmt :: Parser (Maybe Stmt)
+forInitializerStmt = peek >>= \case
+    Nothing -> reportError "Unexpected end of tokens"
+    Just tkn -> case tokenType tkn of
+        SEMICOLON -> advance >> return Nothing
+        VAR -> Just <$> varDeclaration
+        _ -> Just <$> expressionStmt
+
+forConditionExpression :: Parser (Maybe Expression)
+forConditionExpression = do
+    cond <- ifM (not <$> match [SEMICOLON])
+                (Just <$> expression)
+                (return Nothing)
+    _ <- consume SEMICOLON "Expected ';' after loop condition"
+    return cond
+
+forIncrementExpression :: Parser (Maybe Expression)
+forIncrementExpression = do
+    cond <- ifM (not <$> match [RIGHT_PAREN])
+                (Just <$> expression)
+                (return Nothing)
+    _ <- consume RIGHT_PAREN "Expected ')' after for clauses"
+    return cond
+
+applyForIncrement :: Maybe Expression -> Stmt -> Parser Stmt
+applyForIncrement Nothing stmt = return stmt
+applyForIncrement (Just incr) stmt = return $ Block [stmt, Expression incr]
+
+applyForCondition :: Maybe Expression -> Stmt -> Parser Stmt
+applyForCondition  Nothing stmt = return $ WhileStmt (Literal (BooleanValue True)) stmt
+applyForCondition  (Just cond) stmt = return $ WhileStmt cond stmt
+
+applyForInitializer :: Maybe Stmt -> Stmt -> Parser Stmt
+applyForInitializer Nothing stmt = return stmt
+applyForInitializer (Just ini) stmt = return $ Block [ini, stmt]
 
 whileStmt :: Parser Stmt
 whileStmt = do
