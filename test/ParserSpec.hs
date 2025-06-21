@@ -415,3 +415,66 @@ spec_parseStmts = describe "parseStmt" $ do
         it "fails - missing expected ')'" $ do
             let tokens =  [ createToken WHILE, createToken LEFT_PAREN, true ]
             parseStmt tokens `shouldFailTo` ParseError "Expected ')' after 'while'" Nothing
+
+    describe "for statement" $ do
+
+        let varInititalizer = [ createToken VAR, createToken IDENTIFIER, equal, createNumericToken 0 ]
+            condition = [ createToken IDENTIFIER, createToken LESS_EQUAL, createNumericToken 10 ]
+            increment = [ createToken IDENTIFIER, equal, createToken IDENTIFIER, plus, createNumericToken 1 ]
+            body = [ createNumericToken 21, semicolon ]
+
+            varInitializerStmt = Var (createToken IDENTIFIER) (numExpr 0)
+
+            conditionExpr = Binary (Variable (createToken IDENTIFIER))
+                                   (createToken LESS_EQUAL)
+                                   (numExpr 10)
+
+            incrementStmt = Expression $ Assign (createToken IDENTIFIER)
+                   (Binary (Variable (createToken IDENTIFIER)) (createToken PLUS) (numExpr 1))
+
+            bodyExpr = Expression (numExpr 21)
+
+        it "success" $ do
+            let tokens = [ createToken FOR, createToken LEFT_PAREN ] ++ varInititalizer ++
+                         [ semicolon ] ++ condition ++ [ semicolon ] ++ increment ++
+                         [ createToken RIGHT_PAREN ] ++ body
+
+                expectedStmt = Block
+                        [ varInitializerStmt
+                        , WhileStmt conditionExpr (Block [bodyExpr, incrementStmt])
+                        ]
+
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "success - no initializer" $ do
+            let tokens = [ createToken FOR, createToken LEFT_PAREN, semicolon ] ++
+                         condition ++ [ semicolon ] ++ increment ++ [ createToken RIGHT_PAREN ] ++
+                         body
+
+                expectedStmt = WhileStmt conditionExpr (Block [ bodyExpr, incrementStmt ])
+
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "success - no condition" $ do
+            let tokens = [ createToken FOR, createToken LEFT_PAREN ] ++ varInititalizer ++
+                         [ semicolon, semicolon ] ++ increment ++ [ createToken RIGHT_PAREN ] ++
+                         body
+
+                expectedStmt = Block
+                        [ varInitializerStmt
+                        , WhileStmt (boolExpr True) (Block [ bodyExpr, incrementStmt ])
+                        ]
+
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "success - no increment" $ do
+            let tokens = [ createToken FOR, createToken LEFT_PAREN ] ++ varInititalizer ++
+                         [ semicolon ] ++ condition ++ [ semicolon, createToken RIGHT_PAREN ] ++
+                         body
+
+                expectedStmt = Block
+                        [ varInitializerStmt
+                        , WhileStmt conditionExpr bodyExpr
+                        ]
+
+            parseStmt tokens `shouldParseTo` expectedStmt
