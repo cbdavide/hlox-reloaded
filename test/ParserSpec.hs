@@ -419,11 +419,14 @@ spec_parseStmts = describe "parseStmt" $ do
     describe "for statement" $ do
 
         let varInititalizer = [ createToken VAR, createToken IDENTIFIER, equal, createNumericToken 0 ]
+            exprInitializer = [ createToken IDENTIFIER, equal, createNumericToken 1 ]
             condition = [ createToken IDENTIFIER, createToken LESS_EQUAL, createNumericToken 10 ]
             increment = [ createToken IDENTIFIER, equal, createToken IDENTIFIER, plus, createNumericToken 1 ]
             body = [ createNumericToken 21, semicolon ]
 
             varInitializerStmt = Var (createToken IDENTIFIER) (numExpr 0)
+
+            exprInitializerStmt = Expression $ Assign (createToken IDENTIFIER) (numExpr 1)
 
             conditionExpr = Binary (Variable (createToken IDENTIFIER))
                                    (createToken LESS_EQUAL)
@@ -441,6 +444,18 @@ spec_parseStmts = describe "parseStmt" $ do
 
                 expectedStmt = Block
                         [ varInitializerStmt
+                        , WhileStmt conditionExpr (Block [bodyExpr, incrementStmt])
+                        ]
+
+            parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "success - with initializer expression" $ do
+            let tokens = [ createToken FOR, createToken LEFT_PAREN ] ++ exprInitializer ++
+                         [ semicolon ] ++ condition ++ [ semicolon ] ++ increment ++
+                         [ createToken RIGHT_PAREN ] ++ body
+
+                expectedStmt = Block
+                        [ exprInitializerStmt
                         , WhileStmt conditionExpr (Block [bodyExpr, incrementStmt])
                         ]
 
@@ -478,3 +493,37 @@ spec_parseStmts = describe "parseStmt" $ do
                         ]
 
             parseStmt tokens `shouldParseTo` expectedStmt
+
+        it "fails - missing '('" $ do
+            let tokens = [ createToken FOR ] ++ varInititalizer ++
+                         [ semicolon ] ++ condition ++ [ semicolon, createToken RIGHT_PAREN ] ++
+                         body
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected '(' after 'for'" (Just $ createToken VAR)
+
+        it "fails - missing ')'" $ do
+            let tokens = [ createToken FOR, createToken LEFT_PAREN ] ++ varInititalizer ++
+                         [ semicolon ] ++ condition ++ [ semicolon ] ++
+                         body
+
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected ')' after for clauses" (Just semicolon)
+
+        it "fails - missing ';' after initializer" $ do
+            let invalidInitializer = [ createToken IDENTIFIER, equal, createNumericToken 10 ]
+                tokens = [ createToken FOR, createToken LEFT_PAREN ] ++ invalidInitializer ++
+                         condition ++ [ semicolon ] ++
+                         body
+
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected ';' after value" (Just (createToken IDENTIFIER))
+
+        it "fails - missing ';' after condition" $ do
+            let tokens = [ createToken FOR, createToken LEFT_PAREN ] ++ varInititalizer ++
+                         [ semicolon ] ++ condition ++ [ createToken RIGHT_PAREN ] ++
+                         body
+
+
+            parseStmt tokens `shouldFailTo` ParseError
+                    "Expected ';' after loop condition"
+                    (Just (createToken RIGHT_PAREN))
