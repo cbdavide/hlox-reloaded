@@ -23,6 +23,7 @@ data Expression = Literal LiteralValue
     | Unary Token Expression
     | Logical Expression Token Expression
     | Binary Expression Token Expression
+    | Call Expression Token [Expression]
     | Grouping Expression
     | Variable Token
     | Assign Token Expression
@@ -242,7 +243,25 @@ factor :: Parser Expression
 factor = manyBinary1 unary [SLASH, STAR]
 
 unary :: Parser Expression
-unary = ifM (not <$> match [BANG, MINUS]) primary (Unary <$> unsafeAdvance <*> unary)
+unary = ifM (not <$> match [BANG, MINUS]) call (Unary <$> unsafeAdvance <*> unary)
+
+call :: Parser Expression
+call = primary >>= \expr -> process expr
+    where process expr =
+            ifM (match [LEFT_PAREN])
+                (advance >> finishCall expr >>= process)
+                (return expr)
+
+finishCall :: Expression -> Parser Expression
+finishCall expr = do
+    args <- getCallArguments
+    paren <- consume RIGHT_PAREN "Expected ')' after arguments"
+    return $ Call expr paren args
+
+getCallArguments :: Parser [Expression]
+getCallArguments = ifM (match [RIGHT_PAREN]) (return []) (reverse <$> go [])
+    where go es = expression >>= \e ->
+            ifM (match [COMMA]) (advance >> go (e:es)) (return $ e:es)
 
 primary :: Parser Expression
 primary = advance >>= \case
