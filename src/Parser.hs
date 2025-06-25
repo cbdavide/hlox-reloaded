@@ -69,10 +69,13 @@ appendOutput :: Stmt -> Parser ()
 appendOutput o = gets outputs >>= (\x -> modifyOutputs (x ++ [o]))
 
 reportError :: T.Text -> Parser a
-reportError msg = peek >>= \mt -> throwError $ ParseError {errorMessage=msg, token=mt}
+reportError msg = peek >>= \mt -> throwError $ ParseError { errorMessage=msg, token=mt }
 
 reportErrorWithToken :: T.Text -> Token -> Parser a
-reportErrorWithToken msg tok =throwError $ ParseError {errorMessage=msg, token=Just tok}
+reportErrorWithToken msg tok = throwError $ ParseError { errorMessage=msg, token=Just tok }
+
+addError :: T.Text ->  Parser ()
+addError msg = peek >>= \mt -> appendError $ ParseError { errorMessage=msg, token=mt }
 
 advance :: Parser (Maybe Token)
 advance = do
@@ -255,6 +258,7 @@ call = primary >>= \expr -> process expr
 finishCall :: Expression -> Parser Expression
 finishCall expr = do
     args <- getCallArguments
+    unless (length args < 255) (addError "Can't have more than 255 arguments")
     paren <- consume RIGHT_PAREN "Expected ')' after arguments"
     return $ Call expr paren args
 
