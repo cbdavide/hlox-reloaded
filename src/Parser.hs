@@ -12,7 +12,8 @@ module Parser (
 import Control.Monad (void, unless)
 import Control.Monad.Except ( ExceptT, MonadError(..), runExceptT )
 import Control.Monad.Extra (ifM, (||^), whenM)
-import Control.Monad.State (evalState, State, gets, modify, execState)
+import Control.Monad.State (evalState, State, gets, modify, execState, runState)
+import Data.Either (isLeft)
 import Data.List (uncons)
 import Data.Maybe (fromJust)
 import qualified Data.Text as T
@@ -76,6 +77,9 @@ reportErrorWithToken msg tok = throwError $ ParseError { errorMessage=msg, token
 
 addError :: T.Text ->  Parser ()
 addError msg = peek >>= \mt -> appendError $ ParseError { errorMessage=msg, token=mt }
+
+addErrorWithToken :: T.Text -> Token -> Parser ()
+addErrorWithToken msg tkn = appendError $ ParseError { errorMessage=msg, token=Just tkn }
 
 advance :: Parser (Maybe Token)
 advance = do
@@ -225,7 +229,7 @@ assignment = do
 
         case expr of
             Variable name -> return $ Assign name value
-            _ -> reportErrorWithToken "Invalid assignment target" equals
+            _ -> addErrorWithToken "Invalid assignment target" equals  >> return expr
 
 orExpr :: Parser Expression
 orExpr = manyLogical1 andExpr [OR]
@@ -344,8 +348,13 @@ parse tokens = if null errors' then Right outputs' else Left errors'
           result = execState (runExceptT parseStmts) ctx
 
 parseExpression :: [Token] -> Either ParseError Expression
-parseExpression tokens = evalState (runExceptT expression) ctx
+parseExpression tokens = out
     where ctx = ParserContext {source=tokens, outputs=[], errors=[]}
+          (res, state) = runState (runExceptT expression) ctx
+          out
+            | isLeft res = res
+            | Just (e, _) <- uncons $ errors state = Left e
+            | otherwise = res
 
 parseStmt :: [Token] -> Either ParseError Stmt
 parseStmt tokens = evalState (runExceptT declaration) ctx
