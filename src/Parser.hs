@@ -3,7 +3,7 @@
 module Parser (
   Expression (..)
 , ParseError (..)
-, Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt)
+, Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt, Function)
 , parse
 , parseExpression
 , parseStmt
@@ -30,13 +30,14 @@ data Expression = Literal LiteralValue
     | Assign Token Expression
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt #-}
+{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, Function #-}
 data Stmt = Expression Expression
     | Print Expression
     | Var Token Expression
     | Block [Stmt]
     | IfStmt Expression Stmt (Maybe Stmt)
     | WhileStmt Expression Stmt
+    | Function Token [Token] [Stmt]
     -- Used to recover from errors
     | NOP
     deriving (Eq, Show)
@@ -111,7 +112,31 @@ isAtEnd :: Parser Bool
 isAtEnd = gets (null . source)
 
 declaration :: Parser Stmt
-declaration = ifM (match [VAR]) varDeclaration statement
+declaration = peek >>= \case
+    Nothing -> reportError "Unexpected end of tokens"
+    Just tkn -> case tokenType tkn of
+        VAR -> varDeclaration
+        FUN -> advance >> functionDeclaration "function"
+        _ -> statement
+
+functionDeclaration :: String -> Parser Stmt
+functionDeclaration kind = do
+    identifier <- consume IDENTIFIER $ T.pack ("Expected " ++ kind ++ " name")
+    _ <- consume LEFT_PAREN $ T.pack ("Expected '(' after " ++ kind ++ " name")
+
+    parameters <- functionParameters
+    closeParen <- consume RIGHT_PAREN $ T.pack ("Expected ')' after " ++ kind ++ " name")
+
+    unless (length parameters < 255) (addErrorWithToken "Can't have more than 255 parameters" closeParen)
+
+    _ <- consume LEFT_BRACE $ T.pack ("Expected '{' before " ++ kind ++ " body")
+
+    Function identifier parameters <$> block
+
+functionParameters :: Parser [Token]
+functionParameters = ifM (match [RIGHT_PAREN]) (return []) (reverse <$> go [])
+    where go xs = consume IDENTIFIER "Expected parameter name" >>= \x ->
+            ifM (match [COMMA]) (advance >> go (x:xs)) (return $ x:xs)
 
 varDeclaration :: Parser Stmt
 varDeclaration = do
@@ -128,7 +153,7 @@ statement = peek >>= \case
         IF -> advance >> ifStmt
         PRINT -> advance >> printStmt
         WHILE -> advance >> whileStmt
-        LEFT_BRACE -> advance >> block
+        LEFT_BRACE -> advance >> Block <$> block
         _ -> expressionStmt
 
 printStmt :: Parser Stmt
@@ -210,8 +235,8 @@ whileStmt = do
 
     WhileStmt condition <$> statement
 
-block :: Parser Stmt
-block = Block . reverse <$> go []
+block :: Parser [Stmt]
+block = reverse <$> go []
     where go xs = ifM (match [RIGHT_BRACE] ||^ isAtEnd)
               (consume RIGHT_BRACE "Expected '}' after a block" >> return xs)
               (declaration >>= \x -> go (x:xs))
