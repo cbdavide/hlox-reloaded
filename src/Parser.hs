@@ -17,10 +17,10 @@ import Data.Either (isLeft)
 import Data.List (uncons)
 import Data.Maybe (fromJust)
 import qualified Data.Text as T
-import Literal ( LiteralValue (..) )
+import Literal ( Value (..) )
 import Token ( Token (..), TokenType (..) )
 
-data Expression = Literal LiteralValue
+data Expression = Literal Value
     | Unary Token Expression
     | Logical Expression Token Expression
     | Binary Expression Token Expression
@@ -309,7 +309,7 @@ primary = advance >>= \case
             LEFT_PAREN -> group
             _ -> reportErrorWithToken "Expected expression" t
 
-literal' :: LiteralValue -> Parser Expression
+literal' :: Value -> Parser Expression
 literal' l = return $ Literal l
 
 numberLiteral' :: Token -> Parser Expression

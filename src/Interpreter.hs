@@ -13,7 +13,7 @@ import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.State ( StateT, evalStateT, modify, gets )
 import qualified Data.Text as T
 import Environment ( Environment, createEnv, envLookup, envAssign, envDefine, popFrame, pushFrame )
-import Literal ( LiteralValue (..), isNumber, isString, isTruthy  )
+import Literal ( Value (..), isNumber, isString, isTruthy  )
 import Parser ( Expression (..), Stmt (..) )
 import Token ( Token (..), TokenType (..) )
 
@@ -37,20 +37,20 @@ addEnvironment = gets environment >>= modifyEnvironment . pushFrame
 removeEnvironment :: Interpreter ()
 removeEnvironment = gets environment >>= modifyEnvironment .popFrame
 
-environmentDefine :: Token -> LiteralValue -> Interpreter ()
+environmentDefine :: Token -> Value -> Interpreter ()
 environmentDefine tkn value = gets environment >>= \env -> do
     case envDefine (lexeme tkn) value env of
         Just e -> modifyEnvironment e
         Nothing -> reportError tkn "internal error: there is no environment defined"
 
-environmentGet :: Token -> Interpreter LiteralValue
+environmentGet :: Token -> Interpreter Value
 environmentGet tkn = gets environment >>= \env -> do
     case envLookup (lexeme tkn) env of
         Just v -> return v
         -- TODO: Find a better way of formatting the error message
         Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
 
-environmentAssign :: Token -> LiteralValue -> Interpreter ()
+environmentAssign :: Token -> Value -> Interpreter ()
 environmentAssign tkn value = gets environment >>= \env -> do
     case envAssign (lexeme tkn) value env of
         Just e -> modifyEnvironment e
@@ -70,7 +70,7 @@ interpret stmts = do
         -- TODO: Format this error
         Left err -> print err
 
-interpretExpression :: Expression -> IO (Either RuntimeError LiteralValue)
+interpretExpression :: Expression -> IO (Either RuntimeError Value)
 interpretExpression expr =
     evalStateT (runExceptT (evalExpression expr))
                (InterpreterContext {environment=createEnv})
@@ -109,7 +109,7 @@ evalWhileStmt cond body =
         (evalStmt body >> evalWhileStmt cond body)
         (return ())
 
-evalExpression :: Expression -> Interpreter LiteralValue
+evalExpression :: Expression -> Interpreter Value
 evalExpression (Literal a) = return a
 evalExpression (Grouping expr) = evalExpression expr
 evalExpression (Unary op expr) = evalUnaryExpression op expr
@@ -118,21 +118,21 @@ evalExpression (Variable tkn) = environmentGet tkn
 evalExpression (Assign tkn expr) = evalAssignment tkn expr
 evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
 
-evalLogicalExpression :: Token -> Expression -> Expression -> Interpreter LiteralValue
+evalLogicalExpression :: Token -> Expression -> Expression -> Interpreter Value
 evalLogicalExpression op v1 v2 = evalExpression v1 >>= eval
     where eval val1
             | tokenType op == OR && isTruthy val1 = return val1
             | tokenType op == AND && not (isTruthy val1) = return val1
             | otherwise = evalExpression v2
 
-evalUnaryExpression :: Token -> Expression -> Interpreter LiteralValue
+evalUnaryExpression :: Token -> Expression -> Interpreter Value
 evalUnaryExpression t expr = evalExpression expr >>= \val ->
     case tokenType t of
         MINUS -> NumberValue . negate <$> extractNumericOperand t val
         BANG -> return $ BooleanValue (not (isTruthy val))
         _ -> reportError t "unary expression with unexpected operator"
 
-evalBinaryExpression :: Token -> Expression -> Expression -> Interpreter LiteralValue
+evalBinaryExpression :: Token -> Expression -> Expression -> Interpreter Value
 evalBinaryExpression op x y = evalExpression x >>= \a -> evalExpression y >>= \b ->
     case tokenType op of
         PLUS -> evalAddition op a b
@@ -148,29 +148,29 @@ evalBinaryExpression op x y = evalExpression x >>= \a -> evalExpression y >>= \b
         EQUAL_EQUAL -> return $ BooleanValue (a == b)
         _ -> reportError op "binary expression with unexpected operator"
 
-evalAssignment :: Token -> Expression -> Interpreter LiteralValue
+evalAssignment :: Token -> Expression -> Interpreter Value
 evalAssignment tkn expr = do
     val <- evalExpression expr
     environmentAssign tkn val
     return val
 
-evalAddition :: Token -> LiteralValue -> LiteralValue -> Interpreter LiteralValue
+evalAddition :: Token -> Value -> Value -> Interpreter Value
 evalAddition op x y
     | isNumber x && isNumber y = NumberValue <$> applyNumericOperator (+) op x y
     | isString x && isString y = StringValue <$> concatStringLiterals op x y
     | otherwise = reportError op "operands must be of the same type"
 
-concatStringLiterals :: Token -> LiteralValue -> LiteralValue -> Interpreter T.Text
+concatStringLiterals :: Token -> Value -> Value -> Interpreter T.Text
 concatStringLiterals _ (StringValue a) (StringValue b) = return $ T.concat [a, b]
 concatStringLiterals t _ _ = reportError t "unexpected non string literals"
 
-applyNumericOperator :: (Float -> Float -> a) -> Token -> LiteralValue -> LiteralValue -> Interpreter a
+applyNumericOperator :: (Float -> Float -> a) -> Token -> Value -> Value -> Interpreter a
 applyNumericOperator op t x y = extractNumericOperands t x y >>= \(a, b) ->  return $ a `op` b
 
-extractNumericOperand :: Token -> LiteralValue -> Interpreter Float
+extractNumericOperand :: Token -> Value -> Interpreter Float
 extractNumericOperand _ (NumberValue n) = return n
 extractNumericOperand t _ = reportError t "operand must be a number"
 
-extractNumericOperands :: Token -> LiteralValue -> LiteralValue -> Interpreter (Float, Float)
+extractNumericOperands :: Token -> Value -> Value -> Interpreter (Float, Float)
 extractNumericOperands _ (NumberValue a) (NumberValue b) = return (a, b)
 extractNumericOperands t _ _ = reportError t "operands must be numbers"

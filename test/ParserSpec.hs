@@ -4,7 +4,7 @@ module ParserSpec ( parserSpecs ) where
 
 import Control.Monad ( forM_ )
 import qualified Data.Text as T
-import Literal ( LiteralValue (..) )
+import Literal ( Value (..) )
 import Parser ( Expression (..), ParseError (..), Stmt(..), parseExpression, parseStmt )
 import Test.Hspec ( describe, it, shouldBe, Spec, Expectation, expectationFailure )
 import Token ( Token (..), TokenType (..) )

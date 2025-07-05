@@ -13,7 +13,7 @@ import Data.Char (isDigit, isAsciiLower, isAsciiUpper)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
 import qualified Data.Text as T
-import Literal (LiteralValue (..))
+import Literal (Value (..))
 import Token (Token (..), TokenType (..))
 
 
@@ -177,7 +177,7 @@ calculateLexemeStartColumn = do
     col <- gets column
     return $ col - lexemeLength' + 1
 
-getTokenValue :: TokenType -> ScannerState LiteralValue
+getTokenValue :: TokenType -> ScannerState Value
 getTokenValue STRING = gets currentLexeme >>= \x -> return $ StringValue (getStringValue x)
 getTokenValue NUMBER = gets currentLexeme >>= \x -> return $ NumberValue (read $ T.unpack x)
 getTokenValue _ = return Nil
