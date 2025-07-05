@@ -4,7 +4,7 @@ module Token (
 ) where
 
 import qualified Data.Text as T
-import Literal (LiteralValue (..))
+import Literal (Value (..))
 
 data TokenType =
     -- Single-character tokens
@@ -31,7 +31,7 @@ data TokenType =
 data Token = Token
     { tokenType     :: TokenType
     , lexeme        :: T.Text
-    , literal       :: LiteralValue
+    , literal       :: Value
 
     -- Location info
     , tokenLine     :: Int

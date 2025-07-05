@@ -9,7 +9,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as T
 import Test.Hspec ( describe, it, shouldBe, Spec )
 
-import Literal (LiteralValue (..))
+import Literal (Value (..))
 import Token ( Token (..), TokenType (..) )
 import Scanner ( scanTokens, Error(..), ScannerResult )
 

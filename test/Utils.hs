@@ -14,7 +14,7 @@ module Utils (
 , nilExpr
 ) where
 
-import Literal ( LiteralValue (..) )
+import Literal ( Value (..) )
 import Parser ( Expression (..) )
 import Token ( Token (..), TokenType (..) )
 import qualified Data.Text as T

@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 module Literal (
-  LiteralValue (..)
+  Value (..)
 , isNumber
 , isString
 , isTruthy
@@ -8,29 +8,29 @@ module Literal (
 
 import qualified Data.Text as T
 
-data LiteralValue =
+data Value =
       NumberValue Float
     | StringValue T.Text
     | BooleanValue Bool
     | Nil
     deriving (Eq)
 
-isTruthy :: LiteralValue -> Bool
+isTruthy :: Value -> Bool
 isTruthy Nil = False
 isTruthy (BooleanValue b) = b
 isTruthy _ = True
 
-isNumber :: LiteralValue -> Bool
+isNumber :: Value -> Bool
 isNumber (NumberValue _) = True
 isNumber _ = False
 
-isString :: LiteralValue -> Bool
+isString :: Value -> Bool
 isString (StringValue _) = True
 isString _ = False
 
-instance Show LiteralValue where
+instance Show Value where
 
-    show :: LiteralValue -> String
+    show :: Value -> String
     show Nil = "nil"
     show (StringValue v) = T.unpack v
     show (BooleanValue v) = show v

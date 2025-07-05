@@ -4,7 +4,7 @@ module InterpreterSpec ( interpreterSpecs ) where
 import Control.Monad ( forM_ )
 import Test.Hspec (Spec, describe, it, shouldBe, Expectation, expectationFailure)
 import Interpreter (interpretExpression, RuntimeError (RuntimeError))
-import Literal (LiteralValue (..))
+import Literal (Value (..))
 import Parser (Expression (..))
 import Utils
 
@@ -24,7 +24,7 @@ spec_eval_expression :: Spec
 spec_eval_expression = describe "evalExpression" $ do
 
     describe "literal expression" $ do
-        let cases :: [(String, LiteralValue)]
+        let cases :: [(String, Value)]
             cases = [ ("number", NumberValue 10)
                     , ("string", StringValue "hello")
                     , ("boolean", BooleanValue True)
@@ -38,7 +38,7 @@ spec_eval_expression = describe "evalExpression" $ do
 
     describe "unary expression" $ do
 
-        let cases :: [(String, Expression, LiteralValue)]
+        let cases :: [(String, Expression, Value)]
             cases = [ ("-10", Unary minus (numExpr 10), NumberValue (-10))
                     , ("- -1", Unary minus (Unary minus (numExpr 1)), NumberValue 1)
                     , ("!true", Unary bang (boolExpr True), BooleanValue False)
