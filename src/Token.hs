@@ -1,10 +1,10 @@
 module Token (
-  Token (..)
+  LiteralValue (..)
+, Token (..)
 , TokenType (..)
 ) where
 
 import qualified Data.Text as T
-import Literal (Value (..))
 
 data TokenType =
     -- Single-character tokens
@@ -28,10 +28,16 @@ data TokenType =
 
     deriving (Eq, Show)
 
+data LiteralValue =
+      LiteralNumber Float
+    | LiteralString T.Text
+    | NoValue
+    deriving (Eq, Show)
+
 data Token = Token
     { tokenType     :: TokenType
     , lexeme        :: T.Text
-    , literal       :: Value
+    , literal       :: LiteralValue
 
     -- Location info
     , tokenLine     :: Int

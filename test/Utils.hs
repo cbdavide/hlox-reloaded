@@ -14,9 +14,9 @@ module Utils (
 , nilExpr
 ) where
 
-import Literal ( Value (..) )
 import Parser ( Expression (..) )
-import Token ( Token (..), TokenType (..) )
+import Runtime ( Value (..) )
+import Token ( Token (..), TokenType (..), LiteralValue (..) )
 import qualified Data.Text as T
 
 baseToken :: Token
@@ -26,7 +26,7 @@ baseToken = Token
     , tokenLength=0
     , tokenColumn=0
     , lexeme=""
-    , literal=Nil
+    , literal=NoValue
     }
 
 createToken :: TokenType -> Token

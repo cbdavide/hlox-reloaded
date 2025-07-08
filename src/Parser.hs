@@ -17,8 +17,8 @@ import Data.Either (isLeft)
 import Data.List (uncons)
 import Data.Maybe (fromJust)
 import qualified Data.Text as T
-import Literal ( Value (..) )
-import Token ( Token (..), TokenType (..) )
+import Runtime ( Value (..) )
+import Token ( Token (..), TokenType (..), LiteralValue (LiteralNumber, LiteralString) )
 
 data Expression = Literal Value
     | Unary Token Expression
@@ -313,11 +313,11 @@ literal' :: Value -> Parser Expression
 literal' l = return $ Literal l
 
 numberLiteral' :: Token -> Parser Expression
-numberLiteral' Token { literal = NumberValue y } = return $ Literal (NumberValue y)
+numberLiteral' Token { literal = LiteralNumber y } = return $ Literal (NumberValue y)
 numberLiteral' t = reportErrorWithToken "Failed to parse numeric literal" t
 
 stringLiteral' :: Token -> Parser Expression
-stringLiteral' Token { literal = StringValue y } = return $ Literal (StringValue y)
+stringLiteral' Token { literal = LiteralString y } = return $ Literal (StringValue y)
 stringLiteral' t = reportErrorWithToken "Failed to parse string literal" t
 
 group :: Parser Expression

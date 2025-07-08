@@ -4,10 +4,10 @@ module ParserSpec ( parserSpecs ) where
 
 import Control.Monad ( forM_ )
 import qualified Data.Text as T
-import Literal ( Value (..) )
 import Parser ( Expression (..), ParseError (..), Stmt(..), parseExpression, parseStmt )
+import Runtime ( Value (..) )
 import Test.Hspec ( describe, it, shouldBe, Spec, Expectation, expectationFailure )
-import Token ( Token (..), TokenType (..) )
+import Token ( Token (..), TokenType (..), LiteralValue (..) )
 import Utils
 
 baseToken :: Token
@@ -17,7 +17,7 @@ baseToken = Token
     , tokenLength=0
     , tokenColumn=0
     , lexeme=""
-    , literal=Nil
+    , literal=NoValue
     }
 
 pattern BoolExpr :: Bool -> Expression
@@ -42,10 +42,10 @@ createTokens :: [TokenType] -> [Token]
 createTokens tps = createToken <$> tps
 
 createNumericToken :: Float -> Token
-createNumericToken num = (createToken NUMBER) { literal = NumberValue num }
+createNumericToken num = (createToken NUMBER) { literal = LiteralNumber num }
 
 createStringToken :: T.Text -> Token
-createStringToken s = (createToken STRING) { literal = StringValue s }
+createStringToken s = (createToken STRING) { literal = LiteralString s }
 
 shouldParseTo :: (Eq a, Show a, Show e) => Either e a -> a -> Expectation
 shouldParseTo (Right actual) expected = actual `shouldBe` expected
@@ -264,12 +264,12 @@ spec_parseExpressions = describe "parseExpression" $ do
             parseExpression tokens `shouldFailTo` ParseError "Expected expression" Nothing
 
         it "fails - invalid numeric token" $ do
-            let badNumber = baseToken { tokenType = NUMBER, literal = StringValue "NaN"}
+            let badNumber = baseToken { tokenType = NUMBER, literal = LiteralString "NaN"}
                 tokens = [createNumericToken 10, createToken STAR, badNumber]
             parseExpression tokens `shouldFailTo` ParseError "Failed to parse numeric literal" (Just badNumber)
 
         it "fails - invalid string token" $ do
-            let badString = baseToken { tokenType = STRING, literal = NumberValue 10}
+            let badString = baseToken { tokenType = STRING, literal = LiteralNumber 10}
             parseExpression [badString] `shouldFailTo` ParseError "Failed to parse string literal" (Just badString)
 
         it "fails - invalid literal" $ do

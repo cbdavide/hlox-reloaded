@@ -1,8 +1,7 @@
 {-# LANGUAGE  OverloadedStrings #-}
 
 module Interpreter (
-  RuntimeError (..)
-, interpret
+  interpret
 , interpretExpression
 ) where
 
@@ -12,21 +11,14 @@ import Control.Monad.Extra (ifM)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.State ( StateT, evalStateT, modify, gets )
 import qualified Data.Text as T
-import Environment ( Environment, createEnv, envLookup, envAssign, envDefine, popFrame, pushFrame )
-import Literal ( Value (..), isNumber, isString, isTruthy  )
 import Parser ( Expression (..), Stmt (..) )
+import Runtime (
+      Interpreter , InterpreterContext (..) , RuntimeError (..)
+    , Environment , createEnv , envLookup , envAssign , envDefine , popFrame , pushFrame
+    , Value (..), isNumber, isString, isTruthy
+    )
+
 import Token ( Token (..), TokenType (..) )
-
-newtype InterpreterContext = InterpreterContext
-    { environment :: Environment
-    } deriving (Eq, Show)
-
-data RuntimeError = RuntimeError
-    { token         :: Token
-    , errorMessage  :: T.Text
-    } deriving (Eq, Show)
-
-type Interpreter a = ExceptT RuntimeError (StateT InterpreterContext IO) a
 
 modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x { environment = env })
@@ -82,6 +74,10 @@ evalStmt (Var tkn expr) = evalVarStmt tkn expr
 evalStmt (Block stmts) = evalBlock stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 evalStmt (WhileStmt cond body) = evalWhileStmt cond body
+evalStmt (Function name params body) = evalFunctionStmt name params body
+
+evalFunctionStmt :: Token -> [Token] -> [Stmt] -> Interpreter ()
+evalFunctionStmt = undefined
 
 evalPrintStmt :: Expression -> Interpreter ()
 evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print $ show val))
@@ -117,6 +113,10 @@ evalExpression (Binary v1 op v2) = evalBinaryExpression op v1 v2
 evalExpression (Variable tkn) = environmentGet tkn
 evalExpression (Assign tkn expr) = evalAssignment tkn expr
 evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
+evalExpression (Call expr paren args) = evalCallExpression expr paren args
+
+evalCallExpression :: Expression -> Token -> [Expression] -> Interpreter Value
+evalCallExpression = undefined
 
 evalLogicalExpression :: Token -> Expression -> Expression -> Interpreter Value
 evalLogicalExpression op v1 v2 = evalExpression v1 >>= eval
