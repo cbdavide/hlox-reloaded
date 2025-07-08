@@ -3,9 +3,10 @@ module InterpreterSpec ( interpreterSpecs ) where
 
 import Control.Monad ( forM_ )
 import Test.Hspec (Spec, describe, it, shouldBe, Expectation, expectationFailure)
-import Interpreter (interpretExpression, RuntimeError (RuntimeError))
-import Literal (Value (..))
+import Interpreter (interpretExpression )
 import Parser (Expression (..))
+import Runtime (Value (..))
+import Runtime (RuntimeError (..))
 import Utils
 
 shouldEvalTo :: (Eq a, Show a, Show e) => Either e a -> a -> Expectation

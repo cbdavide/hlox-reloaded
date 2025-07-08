@@ -9,8 +9,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as T
 import Test.Hspec ( describe, it, shouldBe, Spec )
 
-import Literal (Value (..))
-import Token ( Token (..), TokenType (..) )
+import Token ( Token (..), TokenType (..), LiteralValue (..) )
 import Scanner ( scanTokens, Error(..), ScannerResult )
 
 scannerSpecs :: Spec
@@ -96,7 +95,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=1
             , tokenColumn=1
-            , literal=Nil
+            , literal=NoValue
             , lexeme="("
             }
 
@@ -105,7 +104,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=2
             , tokenColumn=2
-            , literal=Nil
+            , literal=NoValue
             , lexeme="=="
             }
 
@@ -114,7 +113,7 @@ spec_scanTokens = describe "scanTokens" $ do
             , tokenLine=1
             , tokenLength=1
             , tokenColumn=4
-            , literal=Nil
+            , literal=NoValue
             , lexeme=")"
             }
 
@@ -125,7 +124,7 @@ spec_scanTokens = describe "scanTokens" $ do
             result = scanTokens "\"hello i'm a string\""
             tokens' = getTokens result
 
-            expectedValue = StringValue "hello i'm a string"
+            expectedValue = LiteralString "hello i'm a string"
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 2
@@ -162,7 +161,7 @@ spec_scanTokens = describe "scanTokens" $ do
             result = scanTokens input
             tokens' = getTokens result
 
-            expectedValue = NumberValue 1234567
+            expectedValue = LiteralNumber 1234567
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 2
@@ -175,7 +174,7 @@ spec_scanTokens = describe "scanTokens" $ do
             result = scanTokens input
             tokens' = getTokens result
 
-            expectedValue = NumberValue 123.4567
+            expectedValue = LiteralNumber 123.4567
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 2
@@ -190,7 +189,7 @@ spec_scanTokens = describe "scanTokens" $ do
             tokens' = getTokens result
 
             expectedNumber = "987"
-            expectedValue = NumberValue 987
+            expectedValue = LiteralNumber 987
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 3
@@ -206,7 +205,7 @@ spec_scanTokens = describe "scanTokens" $ do
             tokens' = getTokens result
 
             expectedNumber = "1929"
-            expectedValue = NumberValue 1929
+            expectedValue = LiteralNumber 1929
 
         isRight result `shouldBe` True
         length tokens' `shouldBe` 3

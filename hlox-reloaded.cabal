@@ -25,10 +25,9 @@ source-repository head
 
 library
   exposed-modules:
-      Environment
       Interpreter
-      Literal
       Parser
+      Runtime
       Scanner
       Token
   other-modules:
