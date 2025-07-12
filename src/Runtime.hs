@@ -4,6 +4,8 @@ module Runtime (
   Interpreter
 , RuntimeError (..)
 , InterpreterContext (..)
+, Callable (..)
+, CallableImpl (..)
 
   -- Environment
  ,Environment
@@ -13,19 +15,22 @@ module Runtime (
 , envLookup
 , popFrame
 , pushFrame
+, globalEnvironment
 
   -- Value
 , Value (..)
 , isNumber
 , isString
 , isTruthy
+, callableFromValue
 ) where
 
 import Control.Applicative ((<|>))
 import Control.Monad.Except ( ExceptT )
-import Control.Monad.State ( StateT )
+import Control.Monad.State ( StateT, MonadIO (liftIO) )
 import Data.Map (Map)
 import Data.Text (Text)
+import Data.Time.Clock.POSIX ( getPOSIXTime )
 import Token (Token)
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -52,12 +57,23 @@ type Interpreter a = ExceptT RuntimeError (StateT InterpreterContext IO) a
 data Callable = forall c. (CallableImpl c, Eq c) => Callable c
 
 class CallableImpl c where
-    name :: c -> String
     arity :: c -> Int
+    name :: c -> String
+    call :: c -> [Value] -> Interpreter Value
 
 instance Eq Callable where
     (==) :: Callable -> Callable -> Bool
     Callable c1 == Callable c2 = name c1 == name c2
+
+instance CallableImpl Callable where
+    arity :: Callable -> Int
+    arity (Callable c) = arity c
+
+    name :: Callable -> String
+    name (Callable c) = name c
+
+    call :: Callable -> [Value] -> Interpreter Value
+    call (Callable c) = call c
 
 type Frame = Map Text Value
 type Environment = [Frame]
@@ -106,6 +122,10 @@ isString :: Value -> Bool
 isString (StringValue _) = True
 isString _ = False
 
+callableFromValue :: Value -> Maybe Callable
+callableFromValue (FunctionValue c) = Just c
+callableFromValue _ = Nothing
+
 instance Show Value where
 
     show :: Value -> String
@@ -119,3 +139,30 @@ instance Show Value where
                 | x == fromInteger (round x) = show (round x :: Int)
                 | otherwise = show x
 
+
+data NativeFunction = NativeFunction
+    { fnName :: String
+    , fnArity :: Int
+    , fnBody :: [Value] -> Interpreter Value
+    }
+
+instance CallableImpl NativeFunction where
+    name = fnName
+    arity = fnArity
+    call = fnBody
+
+instance Eq NativeFunction where
+    a == b = name a == name b
+
+clockNativeFunction :: NativeFunction
+clockNativeFunction = NativeFunction { fnName="clock", fnArity=0, fnBody=clockImpl }
+
+clockImpl :: [Value] -> Interpreter Value
+clockImpl _ = liftIO getPOSIXTime >>= \t -> pure $ NumberValue (realToFrac (t * 1000))
+
+globalFunctions :: [NativeFunction]
+globalFunctions = [clockNativeFunction]
+
+globalEnvironment :: Environment
+globalEnvironment = [foldr define M.empty globalFunctions]
+    where define a = frameDefine (T.pack $ name a) (FunctionValue $ Callable a)

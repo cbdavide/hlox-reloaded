@@ -3,7 +3,7 @@
 module Parser (
   Expression (..)
 , ParseError (..)
-, Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt, Function)
+, Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt)
 , parse
 , parseExpression
 , parseStmt
@@ -30,14 +30,14 @@ data Expression = Literal Value
     | Assign Token Expression
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, Function #-}
+{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt #-}
 data Stmt = Expression Expression
     | Print Expression
     | Var Token Expression
     | Block [Stmt]
     | IfStmt Expression Stmt (Maybe Stmt)
     | WhileStmt Expression Stmt
-    | Function Token [Token] [Stmt]
+    | FunctionStmt Token [Token] [Stmt]
     -- Used to recover from errors
     | NOP
     deriving (Eq, Show)
@@ -131,7 +131,7 @@ functionDeclaration kind = do
 
     _ <- consume LEFT_BRACE $ T.pack ("Expected '{' before " ++ kind ++ " body")
 
-    Function identifier parameters <$> block
+    FunctionStmt identifier parameters <$> block
 
 functionParameters :: Parser [Token]
 functionParameters = ifM (match [RIGHT_PAREN]) (return []) (reverse <$> go [])

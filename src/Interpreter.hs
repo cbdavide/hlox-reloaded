@@ -1,33 +1,60 @@
 {-# LANGUAGE  OverloadedStrings #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Interpreter (
   interpret
 , interpretExpression
 ) where
 
-import Control.Monad (void)
-import Control.Monad.Except ( ExceptT, throwError, runExceptT, catchError )
+import Control.Monad (void, unless)
+import Control.Monad.Except ( throwError, runExceptT, catchError )
 import Control.Monad.Extra (ifM)
 import Control.Monad.IO.Class (MonadIO(liftIO))
-import Control.Monad.State ( StateT, evalStateT, modify, gets )
+import Control.Monad.State ( evalStateT, modify, gets )
 import qualified Data.Text as T
 import Parser ( Expression (..), Stmt (..) )
 import Runtime (
-      Interpreter , InterpreterContext (..) , RuntimeError (..)
-    , Environment , createEnv , envLookup , envAssign , envDefine , popFrame , pushFrame
-    , Value (..), isNumber, isString, isTruthy
+      Interpreter , InterpreterContext (..) , RuntimeError (..), Callable (..), CallableImpl (..)
+    , Environment , envLookup , envAssign , envDefine , pushFrame, popFrame, globalEnvironment
+    , Value (..), isNumber, isString, isTruthy, callableFromValue
     )
 
 import Token ( Token (..), TokenType (..) )
 
+data Function = Function
+    { fnName :: Token
+    , fnParams :: [Token]
+    , fnBody :: [Stmt]
+    } deriving (Eq)
+
+instance CallableImpl Function where
+
+    arity :: Function -> Int
+    arity = length . fnParams
+
+    name :: Function -> String
+    name = T.unpack . lexeme . fnName
+
+    call :: Function -> [Value] -> Interpreter Value
+    call c args = do
+        prev <- gets environment
+        modifyEnvironment globalEnvironment
+
+        mapM_ (uncurry environmentDefine) (zip (fnParams c) args)
+
+        catchError (evalBlock $ fnBody c) (\err -> modifyEnvironment prev >> throwError err)
+
+        modifyEnvironment prev
+        pure Nil
+
 modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x { environment = env })
 
-addEnvironment :: Interpreter ()
-addEnvironment = gets environment >>= modifyEnvironment . pushFrame
+removeEnvironmentFrame :: Interpreter ()
+removeEnvironmentFrame = gets environment >>= modifyEnvironment . popFrame
 
-removeEnvironment :: Interpreter ()
-removeEnvironment = gets environment >>= modifyEnvironment .popFrame
+addEnvironmentFrame :: Interpreter ()
+addEnvironmentFrame = gets environment >>= modifyEnvironment . pushFrame
 
 environmentDefine :: Token -> Value -> Interpreter ()
 environmentDefine tkn value = gets environment >>= \env -> do
@@ -55,7 +82,7 @@ reportError t msg = throwError $ RuntimeError t msg
 interpret :: [Stmt] -> IO ()
 interpret stmts = do
     result <- evalStateT (runExceptT (mapM_ evalStmt stmts) )
-                         (InterpreterContext {environment=createEnv})
+                         (InterpreterContext {environment=globalEnvironment})
 
     case result of
         Right _ -> return ()
@@ -65,7 +92,7 @@ interpret stmts = do
 interpretExpression :: Expression -> IO (Either RuntimeError Value)
 interpretExpression expr =
     evalStateT (runExceptT (evalExpression expr))
-               (InterpreterContext {environment=createEnv})
+               (InterpreterContext {environment=globalEnvironment})
 
 evalStmt :: Stmt -> Interpreter ()
 evalStmt (Expression expr) = void $ evalExpression expr
@@ -74,10 +101,12 @@ evalStmt (Var tkn expr) = evalVarStmt tkn expr
 evalStmt (Block stmts) = evalBlock stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 evalStmt (WhileStmt cond body) = evalWhileStmt cond body
-evalStmt (Function name params body) = evalFunctionStmt name params body
+evalStmt (FunctionStmt nm params body) = evalFunctionStmt nm params body
 
 evalFunctionStmt :: Token -> [Token] -> [Stmt] -> Interpreter ()
-evalFunctionStmt = undefined
+evalFunctionStmt nm params body = do
+    let fn = Function nm params body
+    environmentDefine nm (FunctionValue $ Callable fn)
 
 evalPrintStmt :: Expression -> Interpreter ()
 evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print $ show val))
@@ -87,9 +116,9 @@ evalVarStmt tkn expr = evalExpression expr >>= \val -> environmentDefine tkn val
 
 evalBlock :: [Stmt] -> Interpreter ()
 evalBlock stmts = do
-    addEnvironment
-    catchError (mapM_ evalStmt stmts) (\err -> removeEnvironment >> throwError err)
-    removeEnvironment
+    addEnvironmentFrame
+    catchError (mapM_ evalStmt stmts) (\err -> removeEnvironmentFrame >> throwError err)
+    removeEnvironmentFrame
 
 evalIfStmt :: Expression -> Stmt -> Maybe Stmt -> Interpreter ()
 evalIfStmt cond thenBranch elseBranch = do
@@ -115,8 +144,19 @@ evalExpression (Assign tkn expr) = evalAssignment tkn expr
 evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
 evalExpression (Call expr paren args) = evalCallExpression expr paren args
 
+extractCallable :: Value -> Token -> Interpreter Callable
+extractCallable val tkn = case callableFromValue val of
+    -- TODO: Improve error message
+    Nothing -> reportError tkn "value is not callable"
+    Just c -> pure c
+
 evalCallExpression :: Expression -> Token -> [Expression] -> Interpreter Value
-evalCallExpression = undefined
+evalCallExpression callee openParenToken args = evalExpression callee >>= \val -> do
+    callable' <- extractCallable val openParenToken
+    -- TODO: Improve error message
+    unless (length args == arity callable') (reportError openParenToken "Invalid number of arguments")
+    args' <- mapM evalExpression args
+    call callable' args'
 
 evalLogicalExpression :: Token -> Expression -> Expression -> Interpreter Value
 evalLogicalExpression op v1 v2 = evalExpression v1 >>= eval
