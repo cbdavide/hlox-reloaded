@@ -132,6 +132,20 @@ spec_scanTokens = describe "scanTokens" $ do
         (lexeme . NonEmpty.head) tokens' `shouldBe` input
         (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
 
+    it "success - scans string with tokens after" $ do
+        let input = "\"value\""
+            result = scanTokens "\"value\"anotherToken"
+            tokens' = getTokens result
+
+            expectedValue = LiteralString "value"
+
+        isRight result `shouldBe` True
+        length tokens' `shouldBe` 3
+        (tokenType . NonEmpty.head) tokens' `shouldBe` STRING
+        (lexeme . NonEmpty.head) tokens' `shouldBe` input
+        (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
+        tokenType (tokens' NonEmpty.!! 1) `shouldBe` IDENTIFIER
+
     it "fails - scanning invalid string" $ do
         let input =  "\"hello i'm an invalid string\n"
             expectedLexeme = T.dropEnd 1 input -- \n is not scanned
