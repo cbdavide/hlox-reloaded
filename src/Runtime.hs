@@ -132,7 +132,7 @@ instance Show Value where
     show Nil = "nil"
     show (StringValue v) = T.unpack v
     show (BooleanValue v) = show v
-    show (FunctionValue _) = "<fn: function>"
+    show (FunctionValue v) = name v
     show (NumberValue v) = format v
       where
         format :: Float -> String
@@ -147,8 +147,13 @@ data NativeFunction = NativeFunction
     }
 
 instance CallableImpl NativeFunction where
-    name = fnName
+    name :: NativeFunction -> String
+    name c = "<built-in function " <> fnName c <> ">"
+
+    arity :: NativeFunction -> Int
     arity = fnArity
+
+    call :: NativeFunction -> [Value] -> Interpreter Value
     call = fnBody
 
 instance Eq NativeFunction where

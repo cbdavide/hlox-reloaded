@@ -47,7 +47,7 @@ instance CallableImpl Function where
     arity = length . fnParams
 
     name :: Function -> String
-    name = T.unpack . lexeme . fnName
+    name f = T.unpack $ "<function " <> (lexeme . fnName) f <> ">"
 
     call :: Function -> [Value] -> Interpreter Value
     call c args = do
