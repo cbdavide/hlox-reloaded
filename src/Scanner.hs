@@ -196,7 +196,7 @@ scanAndAddStringToken = do
     closesString <- advanceIfMatches (== '"')
 
     if closesString
-        then advance >> addToken STRING
+        then addToken STRING
         else addError "unterminated string"
 
 scanAndAddNumericToken :: ScannerState ()
