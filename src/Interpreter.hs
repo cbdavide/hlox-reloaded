@@ -1,34 +1,48 @@
-{-# LANGUAGE  OverloadedStrings #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Interpreter (
-  interpret
-, interpretExpression
+    interpret,
+    interpretExpression,
 ) where
 
-import Control.Monad (void, unless)
-import Control.Monad.Except ( throwError, runExceptT, catchError )
+import Control.Monad (unless, void)
+import Control.Monad.Except (catchError, runExceptT, throwError)
 import Control.Monad.Extra (ifM)
-import Control.Monad.IO.Class (MonadIO(liftIO))
-import Control.Monad.State ( evalStateT, modify, gets )
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.State (evalStateT, gets, modify)
 import qualified Data.Text as T
-import Parser ( Expression (..), Stmt (..) )
+import Parser (Expression (..), Stmt (..))
 import Runtime (
-      Interpreter , InterpreterContext (..) , RuntimeError (..), Callable (..), CallableImpl (..)
-    , Environment , envLookup , envAssign , envDefine , pushFrame, popFrame, globalEnvironment
-    , Value (..), isNumber, isString, isTruthy, callableFromValue
-    )
+    Callable (..),
+    CallableImpl (..),
+    Environment,
+    Interpreter,
+    InterpreterContext (..),
+    RuntimeError (..),
+    Value (..),
+    callableFromValue,
+    envAssign,
+    envDefine,
+    envLookup,
+    globalEnvironment,
+    isNumber,
+    isString,
+    isTruthy,
+    popFrame,
+    pushFrame,
+ )
 
-import Token ( Token (..), TokenType (..) )
+import Token (Token (..), TokenType (..))
 
 data Function = Function
     { fnName :: Token
     , fnParams :: [Token]
     , fnBody :: [Stmt]
-    } deriving (Eq)
+    }
+    deriving (Eq)
 
 instance CallableImpl Function where
-
     arity :: Function -> Int
     arity = length . fnParams
 
@@ -48,7 +62,7 @@ instance CallableImpl Function where
         pure Nil
 
 modifyEnvironment :: Environment -> Interpreter ()
-modifyEnvironment env = modify (\x -> x { environment = env })
+modifyEnvironment env = modify (\x -> x{environment = env})
 
 removeEnvironmentFrame :: Interpreter ()
 removeEnvironmentFrame = gets environment >>= modifyEnvironment . popFrame
@@ -57,32 +71,37 @@ addEnvironmentFrame :: Interpreter ()
 addEnvironmentFrame = gets environment >>= modifyEnvironment . pushFrame
 
 environmentDefine :: Token -> Value -> Interpreter ()
-environmentDefine tkn value = gets environment >>= \env -> do
-    case envDefine (lexeme tkn) value env of
-        Just e -> modifyEnvironment e
-        Nothing -> reportError tkn "internal error: there is no environment defined"
+environmentDefine tkn value =
+    gets environment >>= \env -> do
+        case envDefine (lexeme tkn) value env of
+            Just e -> modifyEnvironment e
+            Nothing -> reportError tkn "internal error: there is no environment defined"
 
 environmentGet :: Token -> Interpreter Value
-environmentGet tkn = gets environment >>= \env -> do
-    case envLookup (lexeme tkn) env of
-        Just v -> return v
-        -- TODO: Find a better way of formatting the error message
-        Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
+environmentGet tkn =
+    gets environment >>= \env -> do
+        case envLookup (lexeme tkn) env of
+            Just v -> return v
+            -- TODO: Find a better way of formatting the error message
+            Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
 
 environmentAssign :: Token -> Value -> Interpreter ()
-environmentAssign tkn value = gets environment >>= \env -> do
-    case envAssign (lexeme tkn) value env of
-        Just e -> modifyEnvironment e
-        -- TODO: Find a better way of formatting the error message
-        Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
+environmentAssign tkn value =
+    gets environment >>= \env -> do
+        case envAssign (lexeme tkn) value env of
+            Just e -> modifyEnvironment e
+            -- TODO: Find a better way of formatting the error message
+            Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
 
 reportError :: Token -> T.Text -> Interpreter a
 reportError t msg = throwError $ RuntimeError t msg
 
 interpret :: [Stmt] -> IO ()
 interpret stmts = do
-    result <- evalStateT (runExceptT (mapM_ evalStmt stmts) )
-                         (InterpreterContext {environment=globalEnvironment})
+    result <-
+        evalStateT
+            (runExceptT (mapM_ evalStmt stmts))
+            (InterpreterContext{environment = globalEnvironment})
 
     case result of
         Right _ -> return ()
@@ -91,8 +110,9 @@ interpret stmts = do
 
 interpretExpression :: Expression -> IO (Either RuntimeError Value)
 interpretExpression expr =
-    evalStateT (runExceptT (evalExpression expr))
-               (InterpreterContext {environment=globalEnvironment})
+    evalStateT
+        (runExceptT (evalExpression expr))
+        (InterpreterContext{environment = globalEnvironment})
 
 evalStmt :: Stmt -> Interpreter ()
 evalStmt (Expression expr) = void $ evalExpression expr
@@ -130,7 +150,8 @@ evalIfStmt cond thenBranch elseBranch = do
 
 evalWhileStmt :: Expression -> Stmt -> Interpreter ()
 evalWhileStmt cond body =
-    ifM (isTruthy <$> evalExpression cond)
+    ifM
+        (isTruthy <$> evalExpression cond)
         (evalStmt body >> evalWhileStmt cond body)
         (return ())
 
@@ -151,42 +172,47 @@ extractCallable val tkn = case callableFromValue val of
     Just c -> pure c
 
 evalCallExpression :: Expression -> Token -> [Expression] -> Interpreter Value
-evalCallExpression callee openParenToken args = evalExpression callee >>= \val -> do
-    callable' <- extractCallable val openParenToken
-    -- TODO: Improve error message
-    unless (length args == arity callable') (reportError openParenToken "Invalid number of arguments")
-    args' <- mapM evalExpression args
-    call callable' args'
+evalCallExpression callee openParenToken args =
+    evalExpression callee >>= \val -> do
+        callable' <- extractCallable val openParenToken
+        -- TODO: Improve error message
+        unless (length args == arity callable') (reportError openParenToken "Invalid number of arguments")
+        args' <- mapM evalExpression args
+        call callable' args'
 
 evalLogicalExpression :: Token -> Expression -> Expression -> Interpreter Value
 evalLogicalExpression op v1 v2 = evalExpression v1 >>= eval
-    where eval val1
-            | tokenType op == OR && isTruthy val1 = return val1
-            | tokenType op == AND && not (isTruthy val1) = return val1
-            | otherwise = evalExpression v2
+  where
+    eval val1
+        | tokenType op == OR && isTruthy val1 = return val1
+        | tokenType op == AND && not (isTruthy val1) = return val1
+        | otherwise = evalExpression v2
 
 evalUnaryExpression :: Token -> Expression -> Interpreter Value
-evalUnaryExpression t expr = evalExpression expr >>= \val ->
-    case tokenType t of
-        MINUS -> NumberValue . negate <$> extractNumericOperand t val
-        BANG -> return $ BooleanValue (not (isTruthy val))
-        _ -> reportError t "unary expression with unexpected operator"
+evalUnaryExpression t expr =
+    evalExpression expr >>= \val ->
+        case tokenType t of
+            MINUS -> NumberValue . negate <$> extractNumericOperand t val
+            BANG -> return $ BooleanValue (not (isTruthy val))
+            _ -> reportError t "unary expression with unexpected operator"
 
 evalBinaryExpression :: Token -> Expression -> Expression -> Interpreter Value
-evalBinaryExpression op x y = evalExpression x >>= \a -> evalExpression y >>= \b ->
-    case tokenType op of
-        PLUS -> evalAddition op a b
-        MINUS -> NumberValue <$> applyNumericOperator (-) op a b
-        SLASH -> NumberValue <$> applyNumericOperator (/) op a b
-        STAR -> NumberValue <$> applyNumericOperator (*) op a b
-        GREATER -> BooleanValue <$> applyNumericOperator (>) op a b
-        GREATER_EQUAL -> BooleanValue <$> applyNumericOperator (>=) op a b
-        LESS -> BooleanValue <$> applyNumericOperator (<) op a b
-        LESS_EQUAL -> BooleanValue <$> applyNumericOperator (<=) op a b
-        -- Equality operators support operands of different type
-        BANG_EQUAL -> return $ BooleanValue (a /= b)
-        EQUAL_EQUAL -> return $ BooleanValue (a == b)
-        _ -> reportError op "binary expression with unexpected operator"
+evalBinaryExpression op x y =
+    evalExpression x >>= \a ->
+        evalExpression y >>= \b ->
+            case tokenType op of
+                PLUS -> evalAddition op a b
+                MINUS -> NumberValue <$> applyNumericOperator (-) op a b
+                SLASH -> NumberValue <$> applyNumericOperator (/) op a b
+                STAR -> NumberValue <$> applyNumericOperator (*) op a b
+                GREATER -> BooleanValue <$> applyNumericOperator (>) op a b
+                GREATER_EQUAL -> BooleanValue <$> applyNumericOperator (>=) op a b
+                LESS -> BooleanValue <$> applyNumericOperator (<) op a b
+                LESS_EQUAL -> BooleanValue <$> applyNumericOperator (<=) op a b
+                -- Equality operators support operands of different type
+                BANG_EQUAL -> return $ BooleanValue (a /= b)
+                EQUAL_EQUAL -> return $ BooleanValue (a == b)
+                _ -> reportError op "binary expression with unexpected operator"
 
 evalAssignment :: Token -> Expression -> Interpreter Value
 evalAssignment tkn expr = do
@@ -205,7 +231,7 @@ concatStringLiterals _ (StringValue a) (StringValue b) = return $ T.concat [a, b
 concatStringLiterals t _ _ = reportError t "unexpected non string literals"
 
 applyNumericOperator :: (Float -> Float -> a) -> Token -> Value -> Value -> Interpreter a
-applyNumericOperator op t x y = extractNumericOperands t x y >>= \(a, b) ->  return $ a `op` b
+applyNumericOperator op t x y = extractNumericOperands t x y >>= \(a, b) -> return $ a `op` b
 
 extractNumericOperand :: Token -> Value -> Interpreter Float
 extractNumericOperand _ (NumberValue n) = return n

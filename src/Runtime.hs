@@ -1,51 +1,52 @@
-{-# LANGUAGE ExistentialQuantification, InstanceSigs  #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Runtime (
-  Interpreter
-, RuntimeError (..)
-, InterpreterContext (..)
-, Callable (..)
-, CallableImpl (..)
-
-  -- Environment
- ,Environment
-, createEnv
-, envAssign
-, envDefine
-, envLookup
-, popFrame
-, pushFrame
-, globalEnvironment
-
-  -- Value
-, Value (..)
-, isNumber
-, isString
-, isTruthy
-, callableFromValue
+    Interpreter,
+    RuntimeError (..),
+    InterpreterContext (..),
+    Callable (..),
+    CallableImpl (..),
+    -- Environment
+    Environment,
+    createEnv,
+    envAssign,
+    envDefine,
+    envLookup,
+    popFrame,
+    pushFrame,
+    globalEnvironment,
+    -- Value
+    Value (..),
+    isNumber,
+    isString,
+    isTruthy,
+    callableFromValue,
 ) where
 
 import Control.Applicative ((<|>))
-import Control.Monad.Except ( ExceptT )
-import Control.Monad.State ( StateT, MonadIO (liftIO) )
+import Control.Monad.Except (ExceptT)
+import Control.Monad.State (MonadIO (liftIO), StateT)
 import Data.Map (Map)
-import Data.Text (Text)
-import Data.Time.Clock.POSIX ( getPOSIXTime )
-import Token (Token)
 import qualified Data.Map as M
+import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Token (Token)
 
 data RuntimeError = RuntimeError
-    { token         :: Token
-    , errorMessage  :: Text
-    } deriving (Eq, Show)
+    { token :: Token
+    , errorMessage :: Text
+    }
+    deriving (Eq, Show)
 
 newtype InterpreterContext = InterpreterContext
     { environment :: Environment
-    } deriving (Eq, Show)
+    }
+    deriving (Eq, Show)
 
-data Value =
-      NumberValue Float
+data Value
+    = NumberValue Float
     | StringValue Text
     | BooleanValue Bool
     | FunctionValue Callable
@@ -95,11 +96,11 @@ envAssign k v env = envLookup k env >> Just (envAssign' k v env)
 
 envDefine :: Text -> Value -> Environment -> Maybe Environment
 envDefine _ _ [] = Nothing
-envDefine k v (e:es) = Just $ frameDefine k v e : es
+envDefine k v (e : es) = Just $ frameDefine k v e : es
 
 envAssign' :: Text -> Value -> Environment -> Environment
 envAssign' _ _ [] = []
-envAssign' k v (e:es) = case frameAssign k v e of
+envAssign' k v (e : es) = case frameAssign k v e of
     Nothing -> e : envAssign' k v es
     Just new -> new : es
 
@@ -127,18 +128,17 @@ callableFromValue (FunctionValue c) = Just c
 callableFromValue _ = Nothing
 
 instance Show Value where
-
     show :: Value -> String
     show Nil = "nil"
     show (StringValue v) = T.unpack v
     show (BooleanValue v) = show v
     show (FunctionValue _) = "<fn: function>"
     show (NumberValue v) = format v
-        where format :: Float -> String
-              format x
-                | x == fromInteger (round x) = show (round x :: Int)
-                | otherwise = show x
-
+      where
+        format :: Float -> String
+        format x
+            | x == fromInteger (round x) = show (round x :: Int)
+            | otherwise = show x
 
 data NativeFunction = NativeFunction
     { fnName :: String
@@ -155,7 +155,7 @@ instance Eq NativeFunction where
     a == b = name a == name b
 
 clockNativeFunction :: NativeFunction
-clockNativeFunction = NativeFunction { fnName="clock", fnArity=0, fnBody=clockImpl }
+clockNativeFunction = NativeFunction{fnName = "clock", fnArity = 0, fnBody = clockImpl}
 
 clockImpl :: [Value] -> Interpreter Value
 clockImpl _ = liftIO getPOSIXTime >>= \t -> pure $ NumberValue (realToFrac (t * 1000))
@@ -165,4 +165,5 @@ globalFunctions = [clockNativeFunction]
 
 globalEnvironment :: Environment
 globalEnvironment = [foldr define M.empty globalFunctions]
-    where define a = frameDefine (T.pack $ name a) (FunctionValue $ Callable a)
+  where
+    define a = frameDefine (T.pack $ name a) (FunctionValue $ Callable a)

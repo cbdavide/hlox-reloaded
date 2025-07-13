@@ -1,68 +1,66 @@
-{-# LANGUAGE  OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Scanner (
-  Error (..)
-, ScannerContext (..)
-, ScannerResult
-, scanTokens
+    Error (..),
+    ScannerContext (..),
+    ScannerResult,
+    scanTokens,
 ) where
 
-import Control.Monad.State (State, gets, modify, execState)
 import Control.Monad.Extra (ifM, when)
-import Data.Char (isDigit, isAsciiLower, isAsciiUpper)
+import Control.Monad.State (State, execState, gets, modify)
+import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
 import qualified Data.Text as T
-import Token (Token (..), TokenType (..), LiteralValue (..))
-
+import Token (LiteralValue (..), Token (..), TokenType (..))
 
 data Error = Error
-    { errorMessage      :: T.Text
-    , errorLexeme       :: T.Text
-    , errorLine         :: Int
-    , errorColumn       :: Int
+    { errorMessage :: T.Text
+    , errorLexeme :: T.Text
+    , errorLine :: Int
+    , errorColumn :: Int
     , errorLexemeLength :: Int
-    } deriving (Eq, Show)
-
+    }
+    deriving (Eq, Show)
 
 data ScannerContext = ScannerContext
-    {
-    -- inputs
-      source        :: T.Text
-
-    -- state
-    , line          :: Int
-    , column        :: Int
+    { -- inputs
+      source :: T.Text
+    , -- state
+      line :: Int
+    , column :: Int
     , currentLexeme :: T.Text
-
-    -- outputs
-    , tokens        :: [Token]
-    , errors        :: [Error]
-    } deriving (Eq, Show)
+    , -- outputs
+      tokens :: [Token]
+    , errors :: [Error]
+    }
+    deriving (Eq, Show)
 
 type ScannerResult = Either [Error] [Token]
 
 type ScannerState a = State ScannerContext a
 
 kewords :: Map.Map T.Text TokenType
-kewords = Map.fromList
-    [ ("and", AND)
-    , ("class", CLASS)
-    , ("else", ELSE)
-    , ("false", FALSE)
-    , ("for", FOR)
-    , ("fun", FUN)
-    , ("if", IF)
-    , ("nil", NIL)
-    , ("or", OR)
-    , ("print", PRINT)
-    , ("return", RETURN)
-    , ("super", SUPER)
-    , ("this", THIS)
-    , ("true", TRUE)
-    , ("var", VAR)
-    , ("while", WHILE)
-    ]
+kewords =
+    Map.fromList
+        [ ("and", AND)
+        , ("class", CLASS)
+        , ("else", ELSE)
+        , ("false", FALSE)
+        , ("for", FOR)
+        , ("fun", FUN)
+        , ("if", IF)
+        , ("nil", NIL)
+        , ("or", OR)
+        , ("print", PRINT)
+        , ("return", RETURN)
+        , ("super", SUPER)
+        , ("this", THIS)
+        , ("true", TRUE)
+        , ("var", VAR)
+        , ("while", WHILE)
+        ]
 
 _isAlpha :: Char -> Bool
 _isAlpha c
@@ -75,22 +73,22 @@ _isAlphaNumeric :: Char -> Bool
 _isAlphaNumeric c = _isAlpha c || isDigit c
 
 modifySource :: T.Text -> ScannerState ()
-modifySource s' = modify (\x -> x { source = s' })
+modifySource s' = modify (\x -> x{source = s'})
 
 modifyTokens :: [Token] -> ScannerState ()
-modifyTokens t' = modify (\x -> x { tokens = t' })
+modifyTokens t' = modify (\x -> x{tokens = t'})
 
 modifyErrors :: [Error] -> ScannerState ()
-modifyErrors e' = modify (\x -> x { errors = e' })
+modifyErrors e' = modify (\x -> x{errors = e'})
 
 modifyLexeme :: T.Text -> ScannerState ()
-modifyLexeme l' = modify (\x -> x { currentLexeme = l' })
+modifyLexeme l' = modify (\x -> x{currentLexeme = l'})
 
 modifyColumn :: Int -> ScannerState ()
-modifyColumn n' = modify (\x -> x { column = n' })
+modifyColumn n' = modify (\x -> x{column = n'})
 
 modifyLine :: Int -> ScannerState ()
-modifyLine n' = modify (\x -> x { line = n' })
+modifyLine n' = modify (\x -> x{line = n'})
 
 incrementLine :: ScannerState ()
 incrementLine = gets line >>= (\x -> modifyLine (x + 1))
@@ -102,7 +100,7 @@ incrementColumn :: ScannerState ()
 incrementColumn = incrementColumnWith (+ 1)
 
 resetColumn :: ScannerState ()
-resetColumn = modify (\x -> x { column = 1 })
+resetColumn = modify (\x -> x{column = 1})
 
 modifyPosition :: Char -> ScannerState ()
 modifyPosition '\n' = incrementLine >> resetColumn
@@ -128,14 +126,16 @@ peek = gets source >>= \x -> return (fst <$> T.uncons x)
 
 peekNext :: ScannerState (Maybe Char)
 peekNext = gets source >>= \x -> return $ getSecondElement x
-    where getSecondElement t = T.uncons t >>= \x -> fst <$> T.uncons (snd x)
+  where
+    getSecondElement t = T.uncons t >>= \x -> fst <$> T.uncons (snd x)
 
 -- Takes the next character if it satisfies the given function
 advanceIfMatches :: (Char -> Bool) -> ScannerState Bool
-advanceIfMatches check = peek >>= \result -> do
-    case result of
-        Nothing -> return False
-        Just x -> if check x then advance >> return True else return False
+advanceIfMatches check =
+    peek >>= \result -> do
+        case result of
+            Nothing -> return False
+            Just x -> if check x then advance >> return True else return False
 
 advanceUntil :: (Char -> Bool) -> ScannerState ()
 advanceUntil f = advanceIfMatches (not . f) >>= \x -> when x (advanceUntil f)
@@ -157,18 +157,18 @@ appendError e = gets errors >>= (\x -> modifyErrors (x ++ [e]))
 
 createError :: T.Text -> ScannerState Error
 createError m =
-        gets (Error m . currentLexeme)
-    <*> gets line
-    <*> calculateLexemeStartColumn
-    <*> gets (T.length . currentLexeme)
+    gets (Error m . currentLexeme)
+        <*> gets line
+        <*> calculateLexemeStartColumn
+        <*> gets (T.length . currentLexeme)
 
 createToken :: TokenType -> ScannerState Token
 createToken tp =
-        gets (Token tp . currentLexeme)
-    <*> getTokenValue tp
-    <*> gets line
-    <*> calculateLexemeStartColumn
-    <*> gets (T.length . currentLexeme)
+    gets (Token tp . currentLexeme)
+        <*> getTokenValue tp
+        <*> gets line
+        <*> calculateLexemeStartColumn
+        <*> gets (T.length . currentLexeme)
 
 calculateLexemeStartColumn :: ScannerState Int
 calculateLexemeStartColumn = do
@@ -203,7 +203,7 @@ scanAndAddNumericToken :: ScannerState ()
 scanAndAddNumericToken = do
     advanceWhile isDigit
 
-    isNextADot <- (fmap . fmap) (== '.')  peek
+    isNextADot <- (fmap . fmap) (== '.') peek
     isSndADigit <- (fmap . fmap) isDigit peekNext
 
     when (isJust isNextADot && isJust isSndADigit) $
@@ -234,30 +234,40 @@ processToken c = case c of
     '+' -> addToken PLUS
     ';' -> addToken SEMICOLON
     '*' -> addToken STAR
-    '!' -> ifM (advanceIfMatches (== '='))
-               (addToken BANG_EQUAL)
-               (addToken BANG)
-    '=' -> ifM (advanceIfMatches (== '='))
-               (addToken EQUAL_EQUAL)
-               (addToken EQUAL)
-    '<' -> ifM (advanceIfMatches (== '='))
-               (addToken LESS_EQUAL)
-               (addToken LESS)
-    '>' -> ifM (advanceIfMatches (== '='))
-               (addToken GREATER_EQUAL)
-               (addToken GREATER)
-    '/' -> ifM (advanceIfMatches (== '/'))
-               (ignoreUntil (== '\n'))
-               (addToken SLASH)
-    ' '  -> ignore
+    '!' ->
+        ifM
+            (advanceIfMatches (== '='))
+            (addToken BANG_EQUAL)
+            (addToken BANG)
+    '=' ->
+        ifM
+            (advanceIfMatches (== '='))
+            (addToken EQUAL_EQUAL)
+            (addToken EQUAL)
+    '<' ->
+        ifM
+            (advanceIfMatches (== '='))
+            (addToken LESS_EQUAL)
+            (addToken LESS)
+    '>' ->
+        ifM
+            (advanceIfMatches (== '='))
+            (addToken GREATER_EQUAL)
+            (addToken GREATER)
+    '/' ->
+        ifM
+            (advanceIfMatches (== '/'))
+            (ignoreUntil (== '\n'))
+            (addToken SLASH)
+    ' ' -> ignore
     '\r' -> ignore
     '\t' -> ignore
     '\n' -> ignore
     '"' -> scanAndAddStringToken
-    _ | isDigit c -> scanAndAddNumericToken
-      | _isAlpha c -> scanAndAddIdentifier
-      | otherwise -> addError "unexpected character"
-
+    _
+        | isDigit c -> scanAndAddNumericToken
+        | _isAlpha c -> scanAndAddIdentifier
+        | otherwise -> addError "unexpected character"
 
 scanTokens' :: ScannerState ()
 scanTokens' = do
@@ -269,7 +279,8 @@ scanTokens' = do
 
 scanTokens :: T.Text -> ScannerResult
 scanTokens s = if not (null errors') then Left errors' else Right tokens'
-    where ctx = ScannerContext { source=s, line=1, column=0, currentLexeme="", tokens=[], errors=[] }
-          resultCtx = execState scanTokens' ctx
-          errors' = errors resultCtx
-          tokens' = tokens resultCtx
+  where
+    ctx = ScannerContext{source = s, line = 1, column = 0, currentLexeme = "", tokens = [], errors = []}
+    resultCtx = execState scanTokens' ctx
+    errors' = errors resultCtx
+    tokens' = tokens resultCtx
