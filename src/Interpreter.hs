@@ -127,7 +127,7 @@ evalFunctionStmt nm params body = do
     environmentDefine nm (FunctionValue $ Callable fn)
 
 evalPrintStmt :: Expression -> Interpreter ()
-evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print $ show val))
+evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print val))
 
 evalVarStmt :: Token -> Expression -> Interpreter ()
 evalVarStmt tkn expr = evalExpression expr >>= \val -> environmentDefine tkn val
