@@ -82,16 +82,14 @@ environmentGet tkn =
     gets environment >>= \env -> do
         case envLookup (lexeme tkn) env of
             Just v -> return v
-            -- TODO: Find a better way of formatting the error message
-            Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
+            Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
 
 environmentAssign :: Token -> Value -> Interpreter ()
 environmentAssign tkn value =
     gets environment >>= \env -> do
         case envAssign (lexeme tkn) value env of
             Just e -> modifyEnvironment e
-            -- TODO: Find a better way of formatting the error message
-            Nothing -> reportError tkn (T.concat ["undefined variable '", lexeme tkn, "'"])
+            Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
 
 reportError :: Token -> T.Text -> Interpreter a
 reportError t msg = throwError $ RuntimeError t msg
@@ -167,16 +165,17 @@ evalExpression (Call expr paren args) = evalCallExpression expr paren args
 
 extractCallable :: Value -> Token -> Interpreter Callable
 extractCallable val tkn = case callableFromValue val of
-    -- TODO: Improve error message
-    Nothing -> reportError tkn "value is not callable"
+    Nothing -> reportError tkn (T.pack $ "value '" <> show val <> "' is not callable")
     Just c -> pure c
 
 evalCallExpression :: Expression -> Token -> [Expression] -> Interpreter Value
 evalCallExpression callee openParenToken args =
     evalExpression callee >>= \val -> do
         callable' <- extractCallable val openParenToken
-        -- TODO: Improve error message
-        unless (length args == arity callable') (reportError openParenToken "Invalid number of arguments")
+
+        let arityError = "expected " <> show (arity callable') <> " arguments but got " <> show (length args)
+        unless (length args == arity callable') (reportError openParenToken (T.pack arityError))
+
         args' <- mapM evalExpression args
         call callable' args'
 
