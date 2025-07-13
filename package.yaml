@@ -21,10 +21,11 @@ description:         Please see the README on GitHub at <https://github.com/cbda
 
 dependencies:
 - base >= 4.7 && < 5
-- text
-- mtl
-- extra
 - containers
+- extra
+- mtl
+- optparse-applicative
+- text
 - time
 
 ghc-options:
