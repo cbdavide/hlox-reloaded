@@ -8,6 +8,7 @@ module Parser (
     parse,
     parseExpression,
     parseStmt,
+    parseStmts,
 ) where
 
 import Control.Monad (unless, void)
@@ -115,7 +116,10 @@ match :: [TokenType] -> Parser Bool
 match ts = maybe False ((`elem` ts) . tokenType) <$> peek
 
 isAtEnd :: Parser Bool
-isAtEnd = gets (null . source)
+isAtEnd = gets source >>= func
+  where
+    func [Token{tokenType = EOF}] = pure True
+    func _ = pure False
 
 declaration :: Parser Stmt
 declaration =
