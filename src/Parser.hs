@@ -37,6 +37,7 @@ data Expression
 data Stmt
     = Expression Expression
     | Print Expression
+    | Return Token (Maybe Expression)
     | Var Token Expression
     | Block [Stmt]
     | IfStmt Expression Stmt (Maybe Stmt)
@@ -166,6 +167,7 @@ statement =
             FOR -> advance >> forStmt
             IF -> advance >> ifStmt
             PRINT -> advance >> printStmt
+            RETURN -> returnStmt
             WHILE -> advance >> whileStmt
             LEFT_BRACE -> advance >> Block <$> block
             _ -> expressionStmt
@@ -175,6 +177,16 @@ printStmt = do
     expr <- expression
     _ <- consume SEMICOLON "Expected ';' after value"
     return $ Print expr
+
+returnStmt :: Parser Stmt
+returnStmt =
+    Return
+        <$> unsafeAdvance -- return keyword token
+        <*> returnValueExpr
+        <* consume SEMICOLON "Expected ';' after value"
+
+returnValueExpr :: Parser (Maybe Expression)
+returnValueExpr = ifM (match [SEMICOLON]) (pure Nothing) (Just <$> expression)
 
 expressionStmt :: Parser Stmt
 expressionStmt = do
