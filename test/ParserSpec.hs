@@ -299,6 +299,73 @@ spec_parseExpressions = describe "parseExpression" $ do
             let tok = createToken DOT
             parseExpression [tok] `shouldFailTo` ParseError "Expected expression" (Just tok)
 
+    describe "call expression" $ do
+        it "fails - missing ')'" $ do
+            let tokens = [createToken IDENTIFIER, createToken LEFT_PAREN, createNumericToken 10]
+            parseExpression tokens `shouldFailTo` ParseError "Expected ')' after arguments" Nothing
+
+        it "fails - malformed args" $ do
+            let tokens =
+                    [ createToken IDENTIFIER
+                    , createToken LEFT_PAREN
+                    , createNumericToken 10
+                    , -- missing ','
+                      createStringToken "hello"
+                    , createToken RIGHT_PAREN
+                    ]
+
+                errorToken = createStringToken "hello"
+            parseExpression tokens `shouldFailTo` ParseError "Expected ')' after arguments" (Just errorToken)
+
+        it "fails - malformed args 'identifier(,)'" $ do
+            let tokens =
+                    [ createToken IDENTIFIER
+                    , createToken LEFT_PAREN
+                    , createToken COMMA
+                    , createToken RIGHT_PAREN
+                    ]
+
+            parseExpression tokens `shouldFailTo` ParseError "Expected expression" (Just $ createToken COMMA)
+
+        it "success - no arguments" $ do
+            let tokens = [createToken IDENTIFIER, createToken LEFT_PAREN, createToken RIGHT_PAREN]
+                expectedExpr = Call (Variable (createToken IDENTIFIER)) (createToken RIGHT_PAREN) []
+            parseExpression tokens `shouldParseTo` expectedExpr
+
+        it "success - multiple arguments" $ do
+            let tokens =
+                    [ createToken IDENTIFIER
+                    , createToken LEFT_PAREN
+                    , createNumericToken 10
+                    , createToken COMMA
+                    , createStringToken "hello"
+                    , createToken RIGHT_PAREN
+                    ]
+                expectedArgs = [numExpr 10, strExpr "hello"]
+                expectedExpr = Call (Variable (createToken IDENTIFIER)) (createToken RIGHT_PAREN) expectedArgs
+            parseExpression tokens `shouldParseTo` expectedExpr
+
+        it "success - chained calls" $ do
+            let innerClose = baseToken{tokenType = RIGHT_PAREN, lexeme = "inner - close"}
+                outerClose = baseToken{tokenType = RIGHT_PAREN, lexeme = "outer - close"}
+                tokens =
+                    -- identifier(1, "bye")()
+                    [ createToken IDENTIFIER
+                    , createToken LEFT_PAREN
+                    , createNumericToken 1
+                    , createToken COMMA
+                    , createStringToken "bye"
+                    , innerClose
+                    , createToken LEFT_PAREN
+                    , outerClose
+                    ]
+
+                expectedArgs = [numExpr 1, strExpr "bye"]
+                innerExpr = Call (Variable (createToken IDENTIFIER)) innerClose expectedArgs
+                expectedExpr = Call innerExpr outerClose []
+
+            parseExpression tokens `shouldParseTo` expectedExpr
+
 spec_parseStmts :: Spec
 spec_parseStmts = describe "parseStmt" $ do
     describe "empty input" $ do
