@@ -787,3 +787,16 @@ spec_parseStmts = describe "parseStmt" $ do
                     , createToken EOF
                     ]
             parseStmt tokens `shouldParseTo` FunctionStmt (createToken IDENTIFIER) [param1, param2] []
+
+    describe "return statement" $ do
+        it "fails - expected ';'" $ do
+            let tokens = [createToken RETURN, createNumericToken 10]
+            parseStmt tokens `shouldFailTo` ParseError "Expected ';' after value" Nothing
+
+        it "success - return with no value" $ do
+            let tokens = [createToken RETURN, createToken SEMICOLON]
+            parseStmt tokens `shouldParseTo` Return (createToken RETURN) Nothing
+
+        it "success - return with value" $ do
+            let tokens = [createToken RETURN, createNumericToken 0, createToken SEMICOLON]
+            parseStmt tokens `shouldParseTo` Return (createToken RETURN) (Just $ numExpr 0)
