@@ -1,36 +1,39 @@
-{-# LANGUAGE  OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Utils (
-  bang
-, minus
-, plus
-, andToken
-, orToken
-, true
-, false
-, numExpr
-, strExpr
-, boolExpr
-, nilExpr
+    bang,
+    minus,
+    plus,
+    andToken,
+    orToken,
+    true,
+    false,
+    openParen,
+    closeParen,
+    numExpr,
+    strExpr,
+    boolExpr,
+    nilExpr,
 ) where
 
-import Parser ( Expression (..) )
-import Runtime ( Value (..) )
-import Token ( Token (..), TokenType (..), LiteralValue (..) )
 import qualified Data.Text as T
+import Parser (Expression (..))
+import Runtime (Value (..))
+import Token (LiteralValue (..), Token (..), TokenType (..))
 
 baseToken :: Token
-baseToken = Token
-    { tokenType=EOF
-    , tokenLine=0
-    , tokenLength=0
-    , tokenColumn=0
-    , lexeme=""
-    , literal=NoValue
-    }
+baseToken =
+    Token
+        { tokenType = EOF
+        , tokenLine = 0
+        , tokenLength = 0
+        , tokenColumn = 0
+        , lexeme = ""
+        , literal = NoValue
+        }
 
 createToken :: TokenType -> Token
-createToken tp = baseToken { tokenType = tp }
+createToken tp = baseToken{tokenType = tp}
 
 minus :: Token
 minus = createToken MINUS
@@ -52,6 +55,12 @@ true = createToken TRUE
 
 false :: Token
 false = createToken FALSE
+
+openParen :: Token
+openParen = createToken LEFT_PAREN
+
+closeParen :: Token
+closeParen = createToken RIGHT_PAREN
 
 boolExpr :: Bool -> Expression
 boolExpr b = Literal (BooleanValue b)

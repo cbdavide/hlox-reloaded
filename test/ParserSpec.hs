@@ -4,6 +4,7 @@
 module ParserSpec (parserSpecs) where
 
 import Control.Monad (forM_)
+import Data.List (intersperse)
 import qualified Data.Text as T
 import Parser (Expression (..), ParseError (..), Stmt (..), parse, parseExpression, parseStmt)
 import Runtime (Value (..))
@@ -12,8 +13,10 @@ import Token (LiteralValue (..), Token (..), TokenType (..))
 import Utils (
     andToken,
     boolExpr,
+    closeParen,
     false,
     numExpr,
+    openParen,
     orToken,
     plus,
     strExpr,
@@ -301,48 +304,54 @@ spec_parseExpressions = describe "parseExpression" $ do
 
     describe "call expression" $ do
         it "fails - missing ')'" $ do
-            let tokens = [createToken IDENTIFIER, createToken LEFT_PAREN, createNumericToken 10]
+            let tokens = [createToken IDENTIFIER, openParen, createNumericToken 10]
             parseExpression tokens `shouldFailTo` ParseError "Expected ')' after arguments" Nothing
 
         it "fails - malformed args" $ do
             let tokens =
                     [ createToken IDENTIFIER
-                    , createToken LEFT_PAREN
+                    , openParen
                     , createNumericToken 10
                     , -- missing ','
                       createStringToken "hello"
-                    , createToken RIGHT_PAREN
+                    , closeParen
                     ]
 
                 errorToken = createStringToken "hello"
             parseExpression tokens `shouldFailTo` ParseError "Expected ')' after arguments" (Just errorToken)
 
+        it "fails - more than 255 args" $ do
+            let args = intersperse (createToken COMMA) (replicate 300 $ createNumericToken 10)
+                tokens = [createToken IDENTIFIER, openParen] ++ args ++ [closeParen]
+
+            parseExpression tokens `shouldFailTo` ParseError "Can't have more than 255 arguments" (Just closeParen)
+
         it "fails - malformed args 'identifier(,)'" $ do
             let tokens =
                     [ createToken IDENTIFIER
-                    , createToken LEFT_PAREN
+                    , openParen
                     , createToken COMMA
-                    , createToken RIGHT_PAREN
+                    , closeParen
                     ]
 
             parseExpression tokens `shouldFailTo` ParseError "Expected expression" (Just $ createToken COMMA)
 
         it "success - no arguments" $ do
-            let tokens = [createToken IDENTIFIER, createToken LEFT_PAREN, createToken RIGHT_PAREN]
-                expectedExpr = Call (Variable (createToken IDENTIFIER)) (createToken RIGHT_PAREN) []
+            let tokens = [createToken IDENTIFIER, openParen, closeParen]
+                expectedExpr = Call (Variable (createToken IDENTIFIER)) closeParen []
             parseExpression tokens `shouldParseTo` expectedExpr
 
         it "success - multiple arguments" $ do
             let tokens =
                     [ createToken IDENTIFIER
-                    , createToken LEFT_PAREN
+                    , openParen
                     , createNumericToken 10
                     , createToken COMMA
                     , createStringToken "hello"
-                    , createToken RIGHT_PAREN
+                    , closeParen
                     ]
                 expectedArgs = [numExpr 10, strExpr "hello"]
-                expectedExpr = Call (Variable (createToken IDENTIFIER)) (createToken RIGHT_PAREN) expectedArgs
+                expectedExpr = Call (Variable (createToken IDENTIFIER)) closeParen expectedArgs
             parseExpression tokens `shouldParseTo` expectedExpr
 
         it "success - chained calls" $ do
@@ -351,12 +360,12 @@ spec_parseExpressions = describe "parseExpression" $ do
                 tokens =
                     -- identifier(1, "bye")()
                     [ createToken IDENTIFIER
-                    , createToken LEFT_PAREN
+                    , openParen
                     , createNumericToken 1
                     , createToken COMMA
                     , createStringToken "bye"
                     , innerClose
-                    , createToken LEFT_PAREN
+                    , openParen
                     , outerClose
                     ]
 
@@ -464,9 +473,9 @@ spec_parseStmts = describe "parseStmt" $ do
             let tokens =
                     [ -- if (true)
                       createToken IF
-                    , createToken LEFT_PAREN
+                    , openParen
                     , true
-                    , createToken RIGHT_PAREN
+                    , closeParen
                     , -- 10;
                       createNumericToken 10
                     , semicolon
@@ -478,9 +487,9 @@ spec_parseStmts = describe "parseStmt" $ do
             let tokens =
                     [ -- if (false)
                       createToken IF
-                    , createToken LEFT_PAREN
+                    , openParen
                     , false
-                    , createToken RIGHT_PAREN
+                    , closeParen
                     , -- 10;
                       createNumericToken 10
                     , semicolon
@@ -503,7 +512,7 @@ spec_parseStmts = describe "parseStmt" $ do
             parseStmt tokens `shouldFailTo` ParseError "Expected '(' after 'if'" (Just leftBrace)
 
         it "fails - missing expected ')' " $ do
-            let tokens = [createToken IF, createToken LEFT_PAREN, true]
+            let tokens = [createToken IF, openParen, true]
             parseStmt tokens `shouldFailTo` ParseError "Expected ')' after 'if'" Nothing
 
     describe "while statement" $ do
@@ -511,9 +520,9 @@ spec_parseStmts = describe "parseStmt" $ do
             let tokens =
                     [ -- while (false)
                       createToken WHILE
-                    , createToken LEFT_PAREN
+                    , openParen
                     , false
-                    , createToken RIGHT_PAREN
+                    , closeParen
                     , -- "Hello";
                       createStringToken "Hello"
                     , semicolon
@@ -527,7 +536,7 @@ spec_parseStmts = describe "parseStmt" $ do
             parseStmt tokens `shouldFailTo` ParseError "Expected '(' after 'while'" (Just leftBrace)
 
         it "fails - missing expected ')'" $ do
-            let tokens = [createToken WHILE, createToken LEFT_PAREN, true]
+            let tokens = [createToken WHILE, openParen, true]
             parseStmt tokens `shouldFailTo` ParseError "Expected ')' after 'while'" Nothing
 
     describe "for statement" $ do
@@ -557,13 +566,13 @@ spec_parseStmts = describe "parseStmt" $ do
 
         it "success" $ do
             let tokens =
-                    [createToken FOR, createToken LEFT_PAREN]
+                    [createToken FOR, openParen]
                         ++ varInititalizer
                         ++ [semicolon]
                         ++ condition
                         ++ [semicolon]
                         ++ increment
-                        ++ [createToken RIGHT_PAREN]
+                        ++ [closeParen]
                         ++ body
 
                 expectedStmt =
@@ -576,13 +585,13 @@ spec_parseStmts = describe "parseStmt" $ do
 
         it "success - with initializer expression" $ do
             let tokens =
-                    [createToken FOR, createToken LEFT_PAREN]
+                    [createToken FOR, openParen]
                         ++ exprInitializer
                         ++ [semicolon]
                         ++ condition
                         ++ [semicolon]
                         ++ increment
-                        ++ [createToken RIGHT_PAREN]
+                        ++ [closeParen]
                         ++ body
 
                 expectedStmt =
@@ -595,11 +604,11 @@ spec_parseStmts = describe "parseStmt" $ do
 
         it "success - no initializer" $ do
             let tokens =
-                    [createToken FOR, createToken LEFT_PAREN, semicolon]
+                    [createToken FOR, openParen, semicolon]
                         ++ condition
                         ++ [semicolon]
                         ++ increment
-                        ++ [createToken RIGHT_PAREN]
+                        ++ [closeParen]
                         ++ body
 
                 expectedStmt = WhileStmt conditionExpr (Block [bodyExpr, incrementStmt])
@@ -608,11 +617,11 @@ spec_parseStmts = describe "parseStmt" $ do
 
         it "success - no condition" $ do
             let tokens =
-                    [createToken FOR, createToken LEFT_PAREN]
+                    [createToken FOR, openParen]
                         ++ varInititalizer
                         ++ [semicolon, semicolon]
                         ++ increment
-                        ++ [createToken RIGHT_PAREN]
+                        ++ [closeParen]
                         ++ body
 
                 expectedStmt =
@@ -625,11 +634,11 @@ spec_parseStmts = describe "parseStmt" $ do
 
         it "success - no increment" $ do
             let tokens =
-                    [createToken FOR, createToken LEFT_PAREN]
+                    [createToken FOR, openParen]
                         ++ varInititalizer
                         ++ [semicolon]
                         ++ condition
-                        ++ [semicolon, createToken RIGHT_PAREN]
+                        ++ [semicolon, closeParen]
                         ++ body
 
                 expectedStmt =
@@ -646,14 +655,14 @@ spec_parseStmts = describe "parseStmt" $ do
                         ++ varInititalizer
                         ++ [semicolon]
                         ++ condition
-                        ++ [semicolon, createToken RIGHT_PAREN]
+                        ++ [semicolon, closeParen]
                         ++ body
 
             parseStmt tokens `shouldFailTo` ParseError "Expected '(' after 'for'" (Just $ createToken VAR)
 
         it "fails - missing ')'" $ do
             let tokens =
-                    [createToken FOR, createToken LEFT_PAREN]
+                    [createToken FOR, openParen]
                         ++ varInititalizer
                         ++ [semicolon]
                         ++ condition
@@ -665,7 +674,7 @@ spec_parseStmts = describe "parseStmt" $ do
         it "fails - missing ';' after initializer" $ do
             let invalidInitializer = [createToken IDENTIFIER, equal, createNumericToken 10]
                 tokens =
-                    [createToken FOR, createToken LEFT_PAREN]
+                    [createToken FOR, openParen]
                         ++ invalidInitializer
                         ++ condition
                         ++ [semicolon]
@@ -675,14 +684,106 @@ spec_parseStmts = describe "parseStmt" $ do
 
         it "fails - missing ';' after condition" $ do
             let tokens =
-                    [createToken FOR, createToken LEFT_PAREN]
+                    [createToken FOR, openParen]
                         ++ varInititalizer
                         ++ [semicolon]
                         ++ condition
-                        ++ [createToken RIGHT_PAREN]
+                        ++ [closeParen]
                         ++ body
 
             parseStmt tokens
                 `shouldFailTo` ParseError
                     "Expected ';' after loop condition"
-                    (Just (createToken RIGHT_PAREN))
+                    (Just closeParen)
+
+    describe "function declaration" $ do
+        it "fails - expected identifier " $ do
+            let tokens = [createToken FUN, createNumericToken 10]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected function name" (Just $ createNumericToken 10)
+
+        it "fails - expected '('" $ do
+            let tokens = [createToken FUN, createToken IDENTIFIER, createNumericToken 10]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected '(' after function name" (Just $ createNumericToken 10)
+
+        it "fails - invalid param" $ do
+            let tokens =
+                    [ createToken FUN
+                    , createToken IDENTIFIER
+                    , openParen
+                    , createNumericToken 10
+                    , closeParen
+                    ]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected parameter name" (Just $ createNumericToken 10)
+
+        it "fails - invalid params missing comma" $ do
+            let tokens =
+                    [ createToken FUN
+                    , createToken IDENTIFIER
+                    , openParen
+                    , createToken IDENTIFIER
+                    , createToken IDENTIFIER
+                    ]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected ')' after function name" (Just $ createToken IDENTIFIER)
+
+        it "fails - expected ')'" $ do
+            let tokens =
+                    [ createToken FUN
+                    , createToken IDENTIFIER
+                    , openParen
+                    , createToken IDENTIFIER
+                    , createToken LEFT_BRACE
+                    ]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected ')' after function name" (Just $ createToken LEFT_BRACE)
+
+        it "fails - expected '{'" $ do
+            let tokens =
+                    [ createToken FUN
+                    , createToken IDENTIFIER
+                    , openParen
+                    , closeParen
+                    ]
+
+            parseStmt tokens `shouldFailTo` ParseError "Expected '{' before function body" Nothing
+
+        it "fails - more than 255 parameters" $ do
+            let params = intersperse (createToken COMMA) (replicate 300 $ createToken IDENTIFIER)
+                tokens =
+                    [createToken FUN, createToken IDENTIFIER, openParen]
+                        ++ params
+                        ++ [closeParen, createToken LEFT_BRACE, createToken RIGHT_BRACE, createToken EOF]
+
+            parse tokens `shouldFailTo` [ParseError "Can't have more than 255 parameters" (Just closeParen)]
+
+        it "success - no params" $ do
+            let tokens =
+                    [ createToken FUN
+                    , createToken IDENTIFIER
+                    , openParen
+                    , closeParen
+                    , createToken LEFT_BRACE
+                    , createToken RIGHT_BRACE
+                    , createToken EOF
+                    ]
+            parseStmt tokens `shouldParseTo` FunctionStmt (createToken IDENTIFIER) [] []
+
+        it "success - with params" $ do
+            let param1 = baseToken{tokenType = IDENTIFIER, lexeme = "firstParam"}
+                param2 = baseToken{tokenType = IDENTIFIER, lexeme = "secondParam"}
+                tokens =
+                    [ createToken FUN
+                    , createToken IDENTIFIER
+                    , openParen
+                    , param1
+                    , createToken COMMA
+                    , param2
+                    , closeParen
+                    , createToken LEFT_BRACE
+                    , createToken RIGHT_BRACE
+                    , createToken EOF
+                    ]
+            parseStmt tokens `shouldParseTo` FunctionStmt (createToken IDENTIFIER) [param1, param2] []
