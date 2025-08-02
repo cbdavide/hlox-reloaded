@@ -3,6 +3,7 @@
 
 module Runtime (
     Interpreter,
+    RuntimeInterrupt (..),
     RuntimeError (..),
     InterpreterContext (..),
     Callable (..),
@@ -34,6 +35,9 @@ import qualified Data.Text as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Token (Token)
 
+data RuntimeInterrupt = ReturnValue Token Value | Error RuntimeError
+    deriving (Eq, Show)
+
 data RuntimeError = RuntimeError
     { token :: Token
     , errorMessage :: Text
@@ -53,7 +57,7 @@ data Value
     | Nil
     deriving (Eq)
 
-type Interpreter a = ExceptT RuntimeError (StateT InterpreterContext IO) a
+type Interpreter a = ExceptT RuntimeInterrupt (StateT InterpreterContext IO) a
 
 data Callable = forall c. (CallableImpl c, Eq c) => Callable c
 

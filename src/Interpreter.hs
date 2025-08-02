@@ -20,6 +20,7 @@ import Runtime (
     Interpreter,
     InterpreterContext (..),
     RuntimeError (..),
+    RuntimeInterrupt (..),
     Value (..),
     callableFromValue,
     envAssign,
@@ -56,10 +57,14 @@ instance CallableImpl Function where
 
         mapM_ (uncurry environmentDefine) (zip (fnParams c) args)
 
-        catchError (evalBlock $ fnBody c) (\err -> modifyEnvironment prev >> throwError err)
+        value <- catchError (evalBlock (fnBody c) >> pure Nil) (handleFunctionInterrupt prev)
 
         modifyEnvironment prev
-        pure Nil
+        pure value
+
+handleFunctionInterrupt :: Environment -> RuntimeInterrupt -> Interpreter Value
+handleFunctionInterrupt _ (ReturnValue _ val) = pure val
+handleFunctionInterrupt env err = modifyEnvironment env >> throwError err
 
 modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x{environment = env})
@@ -92,7 +97,10 @@ environmentAssign tkn value =
             Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
 
 reportError :: Token -> T.Text -> Interpreter a
-reportError t msg = throwError $ RuntimeError t msg
+reportError t msg = throwError $ Error (RuntimeError t msg)
+
+throwReturnInterrupt :: Token -> Value -> Interpreter a
+throwReturnInterrupt t v = throwError $ ReturnValue t v
 
 interpret :: [Stmt] -> IO ()
 interpret stmts = do
@@ -109,8 +117,14 @@ interpret stmts = do
 interpretExpression :: Expression -> IO (Either RuntimeError Value)
 interpretExpression expr =
     evalStateT
-        (runExceptT (evalExpression expr))
+        (formatEvalError <$> runExceptT (evalExpression expr))
         (InterpreterContext{environment = globalEnvironment})
+
+formatEvalError :: Either RuntimeInterrupt Value -> Either RuntimeError Value
+formatEvalError (Right val) = pure val
+formatEvalError (Left (Error err)) = Left err
+formatEvalError (Left (ReturnValue tkn _)) =
+    Left $ RuntimeError{token = tkn, errorMessage = "Unexpected Error: Invalid return statement"}
 
 evalStmt :: Stmt -> Interpreter ()
 evalStmt (Expression expr) = void $ evalExpression expr
@@ -120,6 +134,15 @@ evalStmt (Block stmts) = evalBlock stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 evalStmt (WhileStmt cond body) = evalWhileStmt cond body
 evalStmt (FunctionStmt nm params body) = evalFunctionStmt nm params body
+evalStmt (Return t v) = evalReturnStmt t v
+
+evalReturnStmt :: Token -> Maybe Expression -> Interpreter ()
+evalReturnStmt t mv = do
+    value <- case mv of
+        Nothing -> pure Nil
+        Just expr -> evalExpression expr
+
+    throwReturnInterrupt t value
 
 evalFunctionStmt :: Token -> [Token] -> [Stmt] -> Interpreter ()
 evalFunctionStmt nm params body = do

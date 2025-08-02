@@ -4,7 +4,7 @@
 module Parser (
     Expression (..),
     ParseError (..),
-    Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt),
+    Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, Return),
     parse,
     parseExpression,
     parseStmt,
@@ -33,7 +33,7 @@ data Expression
     | Assign Token Expression
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt #-}
+{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, Return #-}
 data Stmt
     = Expression Expression
     | Print Expression
