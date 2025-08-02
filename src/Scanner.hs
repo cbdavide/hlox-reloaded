@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Scanner (
@@ -11,7 +12,6 @@ import Control.Monad.Extra (ifM, when)
 import Control.Monad.State (State, execState, gets, modify)
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import qualified Data.Map as Map
-import Data.Maybe (isJust)
 import qualified Data.Text as T
 import Token (LiteralValue (..), Token (..), TokenType (..))
 
@@ -129,6 +129,13 @@ peekNext = gets source >>= \x -> return $ getSecondElement x
   where
     getSecondElement t = T.uncons t >>= \x -> fst <$> T.uncons (snd x)
 
+-- | Checks if the evaluation of @mc@ satisfies the given predicate @f@
+matches :: ScannerState (Maybe Char) -> (Char -> Bool) -> ScannerState Bool
+matches mc f =
+    mc >>= \case
+        Nothing -> pure False
+        (Just c) -> pure $ f c
+
 -- Takes the next character if it satisfies the given function
 advanceIfMatches :: (Char -> Bool) -> ScannerState Bool
 advanceIfMatches check =
@@ -203,10 +210,10 @@ scanAndAddNumericToken :: ScannerState ()
 scanAndAddNumericToken = do
     advanceWhile isDigit
 
-    isNextADot <- (fmap . fmap) (== '.') peek
-    isSndADigit <- (fmap . fmap) isDigit peekNext
+    isNextADot <- matches peek (== '.')
+    isSndADigit <- matches peekNext isDigit
 
-    when (isJust isNextADot && isJust isSndADigit) $
+    when (isNextADot && isSndADigit) $
         advance >> advanceWhile isDigit
 
     addToken NUMBER

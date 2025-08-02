@@ -1,16 +1,16 @@
-{-# LANGUAGE  OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module ScannerSpec (scannerSpecs) where
 
-import Control.Monad ( forM_ )
-import Data.Either ( fromLeft, fromRight, isLeft, isRight )
-import Data.List.NonEmpty (fromList, NonEmpty)
+import Control.Monad (forM_)
+import Data.Either (fromLeft, fromRight, isLeft, isRight)
+import Data.List.NonEmpty (NonEmpty, fromList)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as T
-import Test.Hspec ( describe, it, shouldBe, Spec )
+import Test.Hspec (Spec, describe, it, shouldBe)
 
-import Token ( Token (..), TokenType (..), LiteralValue (..) )
-import Scanner ( scanTokens, Error(..), ScannerResult )
+import Scanner (Error (..), ScannerResult, scanTokens)
+import Token (LiteralValue (..), Token (..), TokenType (..))
 
 scannerSpecs :: Spec
 scannerSpecs = describe "Scanner" $ do
@@ -24,17 +24,28 @@ getErrors a = fromList $ fromLeft [] a
 
 spec_scanTokens :: Spec
 spec_scanTokens = describe "scanTokens" $ do
-
     describe "scan operators" $ do
-
         let cases :: [(T.Text, TokenType)]
             cases =
-                [ ("(", LEFT_PAREN), (")", RIGHT_PAREN) , ("{", LEFT_BRACE)
-                , ("}", RIGHT_BRACE), (",", COMMA) , (".", DOT), ("-", MINUS)
-                , ("+", PLUS), (";", SEMICOLON) , ("/", SLASH), ("*", STAR)
-
-                , ("!", BANG), ("!=", BANG_EQUAL) , ("=", EQUAL), ("==", EQUAL_EQUAL)
-                , (">", GREATER), (">=", GREATER_EQUAL) , ("<", LESS), ("<=", LESS_EQUAL)
+                [ ("(", LEFT_PAREN)
+                , (")", RIGHT_PAREN)
+                , ("{", LEFT_BRACE)
+                , ("}", RIGHT_BRACE)
+                , (",", COMMA)
+                , (".", DOT)
+                , ("-", MINUS)
+                , ("+", PLUS)
+                , (";", SEMICOLON)
+                , ("/", SLASH)
+                , ("*", STAR)
+                , ("!", BANG)
+                , ("!=", BANG_EQUAL)
+                , ("=", EQUAL)
+                , ("==", EQUAL_EQUAL)
+                , (">", GREATER)
+                , (">=", GREATER_EQUAL)
+                , ("<", LESS)
+                , ("<=", LESS_EQUAL)
                 ]
 
         forM_ cases $ \(s', tp') -> do
@@ -48,7 +59,6 @@ spec_scanTokens = describe "scanTokens" $ do
                 (lexeme . NonEmpty.head) tokens' `shouldBe` s'
 
     describe "scan ignores blank characters" $ do
-
         let cases :: [T.Text]
             cases = ["\n", " ", "\t", "\r"]
 
@@ -90,32 +100,35 @@ spec_scanTokens = describe "scanTokens" $ do
         isRight result `shouldBe` True
         (length . getTokens) result `shouldBe` 4
 
-        NonEmpty.head tokens' `shouldBe` Token
-            { tokenType=LEFT_PAREN
-            , tokenLine=1
-            , tokenLength=1
-            , tokenColumn=1
-            , literal=NoValue
-            , lexeme="("
-            }
+        NonEmpty.head tokens'
+            `shouldBe` Token
+                { tokenType = LEFT_PAREN
+                , tokenLine = 1
+                , tokenLength = 1
+                , tokenColumn = 1
+                , literal = NoValue
+                , lexeme = "("
+                }
 
-        (tokens' NonEmpty.!! 1) `shouldBe` Token
-            { tokenType=EQUAL_EQUAL
-            , tokenLine=1
-            , tokenLength=2
-            , tokenColumn=2
-            , literal=NoValue
-            , lexeme="=="
-            }
+        (tokens' NonEmpty.!! 1)
+            `shouldBe` Token
+                { tokenType = EQUAL_EQUAL
+                , tokenLine = 1
+                , tokenLength = 2
+                , tokenColumn = 2
+                , literal = NoValue
+                , lexeme = "=="
+                }
 
-        (tokens' NonEmpty.!! 2) `shouldBe` Token
-            { tokenType=RIGHT_PAREN
-            , tokenLine=1
-            , tokenLength=1
-            , tokenColumn=4
-            , literal=NoValue
-            , lexeme=")"
-            }
+        (tokens' NonEmpty.!! 2)
+            `shouldBe` Token
+                { tokenType = RIGHT_PAREN
+                , tokenLine = 1
+                , tokenLength = 1
+                , tokenColumn = 4
+                , literal = NoValue
+                , lexeme = ")"
+                }
 
         tokenType (tokens' NonEmpty.!! 2) `shouldBe` RIGHT_PAREN
 
@@ -147,7 +160,7 @@ spec_scanTokens = describe "scanTokens" $ do
         tokenType (tokens' NonEmpty.!! 1) `shouldBe` IDENTIFIER
 
     it "fails - scanning invalid string" $ do
-        let input =  "\"hello i'm an invalid string\n"
+        let input = "\"hello i'm an invalid string\n"
             expectedLexeme = T.dropEnd 1 input -- \n is not scanned
             result = scanTokens input
             errors' = getErrors result
@@ -160,7 +173,7 @@ spec_scanTokens = describe "scanTokens" $ do
         (errorColumn . NonEmpty.head) errors' `shouldBe` 1
 
     it "fails - scanning invalid string EOF" $ do
-        let input =  "\"hello i'm an invalid string"
+        let input = "\"hello i'm an invalid string"
             result = scanTokens input
             errors' = getErrors result
 
@@ -228,20 +241,49 @@ spec_scanTokens = describe "scanTokens" $ do
         (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
         tokenType (tokens' NonEmpty.!! 1) `shouldBe` DOT
 
-    describe "scan identiifers" $ do
+    it "success - scans number followed by multiple tokens" $ do
+        let input = "10000,."
+            result = scanTokens input
+            tokens' = getTokens result
 
+            expectedNumber = "10000"
+            expectedValue = LiteralNumber 10000
+
+        isRight result `shouldBe` True
+        length tokens' `shouldBe` 4
+        (tokenType . NonEmpty.head) tokens' `shouldBe` NUMBER
+        (lexeme . NonEmpty.head) tokens' `shouldBe` expectedNumber
+        (literal . NonEmpty.head) tokens' `shouldBe` expectedValue
+        tokenType (tokens' NonEmpty.!! 1) `shouldBe` COMMA
+        tokenType (tokens' NonEmpty.!! 2) `shouldBe` DOT
+        tokenType (tokens' NonEmpty.!! 3) `shouldBe` EOF
+
+    describe "scan identiifers" $ do
         let cases :: [(T.Text, TokenType)]
             cases =
                 [ -- keywords
-                  ("and", AND), ("class", CLASS) , ("else", ELSE)
-                , ("false", FALSE), ("for", FOR) , ("fun", FUN), ("if", IF)
-                , ("nil", NIL), ("or", OR) , ("print", PRINT), ("return", RETURN)
-                , ("super", SUPER), ("this", THIS) , ("true", TRUE), ("var", VAR)
+                  ("and", AND)
+                , ("class", CLASS)
+                , ("else", ELSE)
+                , ("false", FALSE)
+                , ("for", FOR)
+                , ("fun", FUN)
+                , ("if", IF)
+                , ("nil", NIL)
+                , ("or", OR)
+                , ("print", PRINT)
+                , ("return", RETURN)
+                , ("super", SUPER)
+                , ("this", THIS)
+                , ("true", TRUE)
+                , ("var", VAR)
                 , ("while", WHILE)
-
-                -- identifiers
-                , ("hello", IDENTIFIER), ("_bye", IDENTIFIER), ("id1", IDENTIFIER)
-                , ("snake_case_1", IDENTIFIER), ("hello123", IDENTIFIER)
+                , -- identifiers
+                  ("hello", IDENTIFIER)
+                , ("_bye", IDENTIFIER)
+                , ("id1", IDENTIFIER)
+                , ("snake_case_1", IDENTIFIER)
+                , ("hello123", IDENTIFIER)
                 ]
 
         forM_ cases $ \(s', tp') -> do
