@@ -73,6 +73,7 @@ test-suite hlox-reloaded-test
   other-modules:
       InterpreterSpec
       ParserSpec
+      RuntimeSpec
       ScannerSpec
       Utils
       Paths_hlox_reloaded
