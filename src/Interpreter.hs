@@ -54,7 +54,8 @@ instance CallableImpl LoxFunction where
     call :: LoxFunction -> [Value] -> Interpreter Value
     call c args = do
         prev <- gets environment
-        modifyEnvironment (fnClosureEnv c)
+        closureEnv <- liftIO $ pushFrame (fnClosureEnv c)
+        modifyEnvironment closureEnv
 
         mapM_ (uncurry environmentDefine) (zip (fnParams c) args)
 
