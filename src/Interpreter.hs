@@ -8,7 +8,7 @@ module Interpreter (
 
 import Control.Monad (unless, void)
 import Control.Monad.Except (catchError, runExceptT, throwError)
-import Control.Monad.Extra (ifM)
+import Control.Monad.Extra (ifM, unlessM)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.State (evalStateT, gets, modify)
 import qualified Data.Text as T
@@ -36,24 +36,25 @@ import Runtime (
 
 import Token (Token (..), TokenType (..))
 
-data Function = Function
+data LoxFunction = LoxFunction
     { fnName :: Token
     , fnParams :: [Token]
     , fnBody :: [Stmt]
+    , fnClosureEnv :: Environment
     }
     deriving (Eq)
 
-instance CallableImpl Function where
-    arity :: Function -> Int
+instance CallableImpl LoxFunction where
+    arity :: LoxFunction -> Int
     arity = length . fnParams
 
-    name :: Function -> String
+    name :: LoxFunction -> String
     name f = T.unpack $ "<function " <> (lexeme . fnName) f <> ">"
 
-    call :: Function -> [Value] -> Interpreter Value
+    call :: LoxFunction -> [Value] -> Interpreter Value
     call c args = do
         prev <- gets environment
-        modifyEnvironment globalEnvironment
+        modifyEnvironment (fnClosureEnv c)
 
         mapM_ (uncurry environmentDefine) (zip (fnParams c) args)
 
@@ -73,28 +74,30 @@ removeEnvironmentFrame :: Interpreter ()
 removeEnvironmentFrame = gets environment >>= modifyEnvironment . popFrame
 
 addEnvironmentFrame :: Interpreter ()
-addEnvironmentFrame = gets environment >>= modifyEnvironment . pushFrame
+addEnvironmentFrame = gets environment >>= liftIO . pushFrame >>= modifyEnvironment
 
 environmentDefine :: Token -> Value -> Interpreter ()
 environmentDefine tkn value =
     gets environment >>= \env -> do
-        case envDefine (lexeme tkn) value env of
-            Just e -> modifyEnvironment e
-            Nothing -> reportError tkn "internal error: there is no environment defined"
+        unlessM
+            (liftIO (envDefine (lexeme tkn) value env))
+            (reportError tkn "internal error: there is no environment defined")
 
 environmentGet :: Token -> Interpreter Value
-environmentGet tkn =
-    gets environment >>= \env -> do
-        case envLookup (lexeme tkn) env of
-            Just v -> return v
-            Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
+environmentGet tkn = do
+    env <- gets environment
+    mvalue <- liftIO (envLookup (lexeme tkn) env)
+
+    case mvalue of
+        Just v -> return v
+        Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
 
 environmentAssign :: Token -> Value -> Interpreter ()
 environmentAssign tkn value =
     gets environment >>= \env -> do
-        case envAssign (lexeme tkn) value env of
-            Just e -> modifyEnvironment e
-            Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
+        unlessM
+            (liftIO $ envAssign (lexeme tkn) value env)
+            (reportError tkn ("undefined variable '" <> lexeme tkn <> "'"))
 
 reportError :: Token -> T.Text -> Interpreter a
 reportError t msg = throwError $ Error (RuntimeError t msg)
@@ -104,10 +107,11 @@ throwReturnInterrupt t v = throwError $ ReturnValue t v
 
 interpret :: [Stmt] -> IO ()
 interpret stmts = do
+    globalEnv <- globalEnvironment
     result <-
         evalStateT
             (runExceptT (mapM_ evalStmt stmts))
-            (InterpreterContext{environment = globalEnvironment})
+            (InterpreterContext{environment = globalEnv})
 
     case result of
         Right _ -> return ()
@@ -115,10 +119,11 @@ interpret stmts = do
         Left err -> print err
 
 interpretExpression :: Expression -> IO (Either RuntimeError Value)
-interpretExpression expr =
+interpretExpression expr = do
+    globalEnv <- globalEnvironment
     evalStateT
         (formatEvalError <$> runExceptT (evalExpression expr))
-        (InterpreterContext{environment = globalEnvironment})
+        (InterpreterContext{environment = globalEnv})
 
 formatEvalError :: Either RuntimeInterrupt Value -> Either RuntimeError Value
 formatEvalError (Right val) = pure val
@@ -145,9 +150,10 @@ evalReturnStmt t mv = do
     throwReturnInterrupt t value
 
 evalFunctionStmt :: Token -> [Token] -> [Stmt] -> Interpreter ()
-evalFunctionStmt nm params body = do
-    let fn = Function nm params body
-    environmentDefine nm (FunctionValue $ Callable fn)
+evalFunctionStmt nm params body =
+    gets environment >>= \env -> do
+        let fn = LoxFunction nm params body env
+        environmentDefine nm (FunctionValue $ Callable fn)
 
 evalPrintStmt :: Expression -> Interpreter ()
 evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print val))

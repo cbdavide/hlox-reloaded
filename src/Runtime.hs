@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Runtime (
     Interpreter,
@@ -25,7 +26,6 @@ module Runtime (
     callableFromValue,
 ) where
 
-import Control.Applicative ((<|>))
 import Control.Monad.Except (ExceptT)
 import Control.Monad.State (MonadIO (liftIO), StateT)
 import Data.Map (Map)
@@ -34,6 +34,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Token (Token)
+import Data.IORef (newIORef, IORef, readIORef, writeIORef)
+import Control.Monad.Extra (ifM)
 
 data RuntimeInterrupt = ReturnValue Token Value | Error RuntimeError
     deriving (Eq, Show)
@@ -47,7 +49,6 @@ data RuntimeError = RuntimeError
 newtype InterpreterContext = InterpreterContext
     { environment :: Environment
     }
-    deriving (Eq, Show)
 
 data Value
     = NumberValue Float
@@ -80,39 +81,56 @@ instance CallableImpl Callable where
     call :: Callable -> [Value] -> Interpreter Value
     call (Callable c) = call c
 
-type Frame = Map Text Value
+type Frame = IORef (Map Text Value)
 type Environment = [Frame]
 
-createEnv :: Environment
-createEnv = [M.empty]
+createFrame :: IO Frame
+createFrame = newIORef M.empty
 
-pushFrame :: Environment -> Environment
-pushFrame env = M.empty : env
+frameLookup :: Text -> Frame -> IO (Maybe Value)
+frameLookup k fr = readIORef fr >>= \m -> pure $ M.lookup k m
+
+pushFrame :: Environment -> IO Environment
+pushFrame env = createFrame >>= \fr -> pure (fr : env)
 
 popFrame :: Environment -> Environment
 popFrame = drop 1
 
-envLookup :: Text -> Environment -> Maybe Value
-envLookup k = foldr ((<|>) . M.lookup k) Nothing
+frameIsMember :: Text -> Frame -> IO Bool
+frameIsMember k fr = readIORef fr >>= \m -> pure $ M.member k m
 
-envAssign :: Text -> Value -> Environment -> Maybe Environment
-envAssign k v env = envLookup k env >> Just (envAssign' k v env)
+frameInsert :: Text -> Value -> Frame -> IO ()
+frameInsert k v fr = readIORef fr >>= \m -> writeIORef fr (M.insert k v m)
 
-envDefine :: Text -> Value -> Environment -> Maybe Environment
-envDefine _ _ [] = Nothing
-envDefine k v (e : es) = Just $ frameDefine k v e : es
+frameAssign :: Text -> Value -> Frame -> IO Bool
+frameAssign k v fr = ifM (frameIsMember k fr) (frameInsert k v fr >> pure True) (pure False)
 
-envAssign' :: Text -> Value -> Environment -> Environment
-envAssign' _ _ [] = []
-envAssign' k v (e : es) = case frameAssign k v e of
-    Nothing -> e : envAssign' k v es
-    Just new -> new : es
+frameDefine :: Text -> Value -> Frame -> IO ()
+frameDefine k v fr = readIORef fr >>= \m -> writeIORef fr (M.insert k v m)
 
-frameAssign :: Text -> Value -> Frame -> Maybe Frame
-frameAssign k v fr = if M.member k fr then Just $ M.insert k v fr else Nothing
+createEnv :: IO Environment
+createEnv = createFrame >>= \fr -> pure [fr]
 
-frameDefine :: Text -> Value -> Frame -> Frame
-frameDefine = M.insert
+envLookup :: Text -> Environment -> IO (Maybe Value)
+envLookup _ [] = pure Nothing
+envLookup k (e:es) = frameLookup k e >>= \case
+    Nothing -> envLookup k es
+    x -> pure x
+
+envAssign :: Text -> Value -> Environment -> IO Bool
+envAssign k v env = envLookup k env >>= \case 
+    Nothing -> pure False
+    Just _ -> envAssign' k v env >> pure True
+
+envDefine :: Text -> Value -> Environment -> IO Bool
+envDefine _ _ [] = pure False
+envDefine k v (e : _) = frameDefine k v e >> pure True
+
+envAssign' :: Text -> Value -> Environment -> IO ()
+envAssign' _ _ [] = pure ()
+envAssign' k v (e : es) = frameAssign k v e >>= \case
+    False -> envAssign' k v es
+    True -> pure ()
 
 isTruthy :: Value -> Bool
 isTruthy Nil = False
@@ -172,7 +190,11 @@ clockImpl _ = liftIO getPOSIXTime >>= \t -> pure $ NumberValue (realToFrac (t * 
 globalFunctions :: [NativeFunction]
 globalFunctions = [clockNativeFunction]
 
-globalEnvironment :: Environment
-globalEnvironment = [foldr define M.empty globalFunctions]
-  where
-    define a = frameDefine (T.pack $ name a) (FunctionValue $ Callable a)
+globalEnvironment :: IO Environment
+globalEnvironment = do
+    newEnv <- createEnv
+    mapM_ (\x -> envDefine (T.pack $ name x) (FunctionValue $ Callable x) newEnv) globalFunctions
+    pure newEnv
+-- globalEnvironment = [foldr define M.empty globalFunctions]
+--   where
+--     define a = frameDefine (T.pack $ name a) (FunctionValue $ Callable a)

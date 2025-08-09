@@ -2,8 +2,9 @@
 
 module RuntimeSpec (runtimeSpecs) where
 
-import Data.Maybe (fromJust, isJust)
-import Runtime (Value (NumberValue, StringValue), createEnv, envAssign, envDefine, envLookup, pushFrame)
+import Data.IORef (IORef, readIORef)
+import Data.Map (Map)
+import Runtime (Environment, Value (..), createEnv, envAssign, envDefine, envLookup, pushFrame)
 import Test.Hspec (Spec, describe, it, shouldBe)
 
 runtimeSpecs :: Spec
@@ -14,22 +15,41 @@ spec_Environment :: Spec
 spec_Environment = describe "parseExpression" $ do
     describe "envAssign" $ do
         it "success - assigns to defined variable" $ do
-            let env = envDefine "hello" (NumberValue 10) createEnv
-                resultEnv = envAssign "hello" (NumberValue 21) (fromJust env)
+            env <- createEnv
 
-            isJust resultEnv `shouldBe` True
-            envLookup "hello" (fromJust resultEnv) `shouldBe` Just (NumberValue 21)
+            _ <- envDefine "hello" (NumberValue 10) env
+
+            result <- envAssign "hello" (NumberValue 21) env
+
+            result `shouldBe` True
+            value <- envLookup "hello" env
+            value `shouldBe` Just (NumberValue 21)
 
         it "success - assigns to variable on different frame" $ do
-            let env = (pushFrame . pushFrame) (fromJust $ envDefine "you" (StringValue "tube") (pushFrame createEnv))
-                resultEnv = envAssign "you" (NumberValue 100) env
+            env <- createEnv >>= pushFrame
 
-            isJust resultEnv `shouldBe` True
-            envLookup "you" (fromJust resultEnv) `shouldBe` Just (NumberValue 100)
+            _ <- envDefine "you" (StringValue "tube") env
+
+            newEnv <- pushFrame env
+            result <- envAssign "you" (NumberValue 100) newEnv
+
+            result `shouldBe` True
+            value <- envLookup "you" newEnv
+            value `shouldBe` Just (NumberValue 100)
 
         it "fails - assigns to a not defined variable" $ do
-            let env = fromJust $ envDefine "you" (StringValue "tube") createEnv
-                resultEnv = envAssign "tube" (NumberValue 100) env
+            env <- createEnv >>= pushFrame
+            _ <- envDefine "you" (StringValue "tube") env
+            resultEnv <- envAssign "tube" (NumberValue 100) env
+            resultEnv `shouldBe` False
 
-            resultEnv `shouldBe` Nothing
+printFrame :: (Show v, Show k) => IORef (Map k v) -> IO ()
+printFrame frame = do
+    value <- readIORef frame
+    putStrLn "\n\t===== Frame ===="
+    print value
 
+printEnvironment :: Environment -> IO ()
+printEnvironment env = do
+    putStrLn "**** ENV ****"
+    mapM_ printFrame env
