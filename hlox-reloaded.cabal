@@ -27,6 +27,7 @@ library
   exposed-modules:
       Interpreter
       Parser
+      Resolver
       Runtime
       Scanner
       Token

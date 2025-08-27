@@ -56,7 +56,7 @@ endScope :: Resolver ()
 endScope = gets scopes >>= process
   where
     process [] = pure ()
-    process (s : ss) = modifyScope ss
+    process (_ : ss) = modifyScope ss
 
 scopesPeek :: Resolver (Maybe Scope)
 scopesPeek = gets scopes >>= \x -> pure $ fst <$> uncons x
@@ -76,10 +76,45 @@ scopePut k v =
 visitStmt :: Stmt -> Resolver ()
 visitStmt (Block stmts) = visitBlock stmts
 visitStmt (Var tkn expr) = visitVarStmt tkn expr
-visitStmt _ = undefined
+visitStmt (FunctionStmt name params body) = visitFunctionStmt name params body
+visitStmt (IfStmt expr ifBranch mElseBranch) = visitIfStmt expr ifBranch mElseBranch
+visitStmt (WhileStmt expr stmt) = visitExpr expr >> visitStmt stmt
+visitStmt (Return _ mexpr) = maybe (pure ()) visitExpr mexpr
+visitStmt (Expression expr) = visitExpr expr
+visitStmt (Print expr) = visitExpr expr
+
+visitStmts :: [Stmt] -> Resolver ()
+visitStmts = mapM_ visitStmt
+
+visitBlock :: [Stmt] -> Resolver ()
+visitBlock stmts = beginScope >> visitStmts stmts >> endScope
+
+visitVarStmt :: Token -> Expression -> Resolver ()
+visitVarStmt tkn expr = declare (lexeme tkn) >> visitExpr expr >> define (lexeme tkn)
+
+visitFunctionStmt :: Token -> [Token] -> [Stmt] -> Resolver ()
+visitFunctionStmt name params body =
+    declare (lexeme name)
+        >> define (lexeme name)
+        >> resolveFunction name params body
+
+resolveFunction :: Token -> [Token] -> [Stmt] -> Resolver ()
+resolveFunction name params body =
+    beginScope
+        >> mapM_ resolveFunctionParam params
+        >> visitStmts body
+        >> endScope
+
+visitIfStmt :: Expression -> Stmt -> Maybe Stmt -> Resolver ()
+visitIfStmt expr thenBr Nothing = visitExpr expr >> visitStmt thenBr
+visitIfStmt expr thenBr (Just elseBr) = visitExpr expr >> visitStmt thenBr >> visitStmt elseBr
+
+resolveFunctionParam :: Token -> Resolver ()
+resolveFunctionParam tkn = declare (lexeme tkn) >> define (lexeme tkn)
 
 visitExpr :: Expression -> Resolver ()
 visitExpr (Variable tkn) = visitVariableExpr tkn
+visitExpr (Assign tkn expr) = visitAssignExpr tkn expr
 visitExpr _ = undefined
 
 visitVariableExpr :: Token -> Resolver ()
@@ -90,11 +125,13 @@ visitVariableExpr tkn = do
         (peekLookupResult == Just False)
         (reportError tkn "Can't read local variable in its own initializer.")
 
-visitBlock :: [Stmt] -> Resolver ()
-visitBlock stmts = beginScope >> mapM_ visitStmt stmts >> endScope
+    resolveLocal (Variable tkn) tkn
 
-visitVarStmt :: Token -> Expression -> Resolver ()
-visitVarStmt tkn expr = declare (lexeme tkn) >> visitExpr expr >> define (lexeme tkn)
+visitAssignExpr :: Token -> Expression -> Resolver ()
+visitAssignExpr tkn expr = visitExpr expr >> resolveLocal (Assign tkn expr) tkn
+
+resolveLocal :: Expression -> Token -> Resolver ()
+resolveLocal = undefined
 
 declare :: Text -> Resolver ()
 declare k = scopePut k False
