@@ -1,18 +1,21 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Resolver () where
+module Resolver (visitStmt) where
 
 import Control.Monad.Extra (when)
 import Control.Monad.State (State, gets, modify)
-import Data.List (uncons)
+import Data.Foldable (for_)
+import Data.List (uncons, findIndex)
+import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Parser (Expression (..), Stmt (..))
 import Token (Token (..))
 
-type Scope = M.Map Text Bool
+type Scope = Map Text Bool
+type Locals = Map Token Int
 
 data ResolverError = ResolverError
     { token :: Token
@@ -23,6 +26,7 @@ data ResolverError = ResolverError
 data ResolverCtx = ResolverCtx
     { scopes :: [Scope]
     , errors :: [ResolverError]
+    , locals :: Locals
     }
     deriving (Show)
 
@@ -34,8 +38,14 @@ newResolverError = ResolverError
 modifyErrors :: [ResolverError] -> Resolver ()
 modifyErrors errs = modify (\x -> x{errors = errs})
 
+modifyLocals :: Locals -> Resolver ()
+modifyLocals l = modify (\x -> x{locals = l})
+
 reportError :: Token -> Text -> Resolver ()
 reportError tkn msg = gets errors >>= \errs -> modifyErrors (newResolverError tkn msg : errs)
+
+setLocal :: Token -> Int -> Resolver ()
+setLocal expr val = gets locals >>= \ls -> modifyLocals (M.insert expr val ls)
 
 newScope :: Scope
 newScope = M.empty
@@ -96,10 +106,10 @@ visitFunctionStmt :: Token -> [Token] -> [Stmt] -> Resolver ()
 visitFunctionStmt name params body =
     declare (lexeme name)
         >> define (lexeme name)
-        >> resolveFunction name params body
+        >> resolveFunction params body
 
-resolveFunction :: Token -> [Token] -> [Stmt] -> Resolver ()
-resolveFunction name params body =
+resolveFunction :: [Token] -> [Stmt] -> Resolver ()
+resolveFunction params body =
     beginScope
         >> mapM_ resolveFunctionParam params
         >> visitStmts body
@@ -115,7 +125,15 @@ resolveFunctionParam tkn = declare (lexeme tkn) >> define (lexeme tkn)
 visitExpr :: Expression -> Resolver ()
 visitExpr (Variable tkn) = visitVariableExpr tkn
 visitExpr (Assign tkn expr) = visitAssignExpr tkn expr
-visitExpr _ = undefined
+visitExpr (Unary _ expr) = visitExpr expr
+visitExpr (Binary left _ right) = visitExpr left >> visitExpr right
+visitExpr (Logical left _ right) = visitExpr left >> visitExpr right
+visitExpr (Call callee _ exprs) = visitExpr callee >> visitExprs exprs
+visitExpr (Grouping expr) = visitExpr expr
+visitExpr (Literal _) = pure ()
+
+visitExprs :: [Expression] -> Resolver ()
+visitExprs = mapM_ visitExpr
 
 visitVariableExpr :: Token -> Resolver ()
 visitVariableExpr tkn = do
@@ -125,13 +143,18 @@ visitVariableExpr tkn = do
         (peekLookupResult == Just False)
         (reportError tkn "Can't read local variable in its own initializer.")
 
-    resolveLocal (Variable tkn) tkn
+    resolveLocal tkn
 
 visitAssignExpr :: Token -> Expression -> Resolver ()
-visitAssignExpr tkn expr = visitExpr expr >> resolveLocal (Assign tkn expr) tkn
+visitAssignExpr tkn expr = visitExpr expr >> resolveLocal tkn
 
-resolveLocal :: Expression -> Token -> Resolver ()
-resolveLocal = undefined
+resolveLocal :: Token -> Resolver ()
+resolveLocal tkn = do
+    scopes' <- gets scopes
+    let midx = findIndex (M.member (lexeme tkn)) scopes'
+    -- We pass the number of scopes between the current innermost
+    -- scope and the scope where the varaible was found
+    for_ midx (setLocal tkn)
 
 declare :: Text -> Resolver ()
 declare k = scopePut k False

@@ -26,13 +26,13 @@ data TokenType =
 
     EOF
 
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 data LiteralValue =
       LiteralNumber Float
     | LiteralString T.Text
     | NoValue
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 data Token = Token
     { tokenType     :: TokenType
@@ -43,4 +43,4 @@ data Token = Token
     , tokenLine     :: Int
     , tokenColumn   :: Int
     , tokenLength   :: Int
-    } deriving (Eq, Show)
+    } deriving (Eq, Ord, Show)
