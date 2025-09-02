@@ -11,6 +11,7 @@ import Control.Monad.Except (catchError, runExceptT, throwError)
 import Control.Monad.Extra (ifM, unlessM)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.State (evalStateT, gets, modify)
+import qualified Data.Map as M
 import qualified Data.Text as T
 import Parser (Expression (..), Stmt (..))
 import Runtime (
@@ -19,6 +20,7 @@ import Runtime (
     Environment,
     Interpreter,
     InterpreterContext (..),
+    Locals,
     RuntimeError (..),
     RuntimeInterrupt (..),
     Value (..),
@@ -26,6 +28,8 @@ import Runtime (
     envAssign,
     envDefine,
     envLookup,
+    frameAssign,
+    frameLookup,
     globalEnvironment,
     isNumber,
     isString,
@@ -84,6 +88,20 @@ environmentDefine tkn value =
             (liftIO (envDefine (lexeme tkn) value env))
             (reportError tkn "internal error: there is no environment defined")
 
+environmentGetAt :: Int -> Token -> Interpreter Value
+environmentGetAt idx tkn = do
+    env <- gets environment
+
+    unless (idx < length env) (reportError tkn "internal error: frame index out of bounds")
+
+    let frame = env !! idx
+
+    result <- liftIO $ frameLookup (lexeme tkn) frame
+
+    case result of
+        Just v -> pure v
+        Nothing -> reportError tkn "internal error: expected token at specified env frame was not found"
+
 environmentGet :: Token -> Interpreter Value
 environmentGet tkn = do
     env <- gets environment
@@ -92,6 +110,20 @@ environmentGet tkn = do
     case mvalue of
         Just v -> return v
         Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
+
+environmentAssignAt :: Int -> Token -> Value -> Interpreter ()
+environmentAssignAt idx tkn value = do
+    env <- gets environment
+
+    unless (idx < length env) (reportError tkn "internal error: frame index out of bounds")
+
+    let frame = env !! idx
+
+    result <- liftIO $ frameAssign (lexeme tkn) value frame
+
+    if result
+        then pure ()
+        else reportError tkn "internal error: expected token at specified frame was not found"
 
 environmentAssign :: Token -> Value -> Interpreter ()
 environmentAssign tkn value =
@@ -106,13 +138,13 @@ reportError t msg = throwError $ Error (RuntimeError t msg)
 throwReturnInterrupt :: Token -> Value -> Interpreter a
 throwReturnInterrupt t v = throwError $ ReturnValue t v
 
-interpret :: [Stmt] -> IO ()
-interpret stmts = do
+interpret :: Locals -> [Stmt] -> IO ()
+interpret locals stmts = do
     globalEnv <- globalEnvironment
     result <-
         evalStateT
             (runExceptT (mapM_ evalStmt stmts))
-            (InterpreterContext{environment = globalEnv})
+            (InterpreterContext{environment = globalEnv, localsMap = locals})
 
     case result of
         Right _ -> return ()
@@ -124,7 +156,7 @@ interpretExpression expr = do
     globalEnv <- globalEnvironment
     evalStateT
         (formatEvalError <$> runExceptT (evalExpression expr))
-        (InterpreterContext{environment = globalEnv})
+        (InterpreterContext{environment = globalEnv, localsMap = M.empty})
 
 formatEvalError :: Either RuntimeInterrupt Value -> Either RuntimeError Value
 formatEvalError (Right val) = pure val
@@ -188,7 +220,7 @@ evalExpression (Literal a) = return a
 evalExpression (Grouping expr) = evalExpression expr
 evalExpression (Unary op expr) = evalUnaryExpression op expr
 evalExpression (Binary v1 op v2) = evalBinaryExpression op v1 v2
-evalExpression (Variable tkn) = environmentGet tkn
+evalExpression (Variable tkn) = evalVariableExpr tkn
 evalExpression (Assign tkn expr) = evalAssignment tkn expr
 evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
 evalExpression (Call expr paren args) = evalCallExpression expr paren args
@@ -243,10 +275,27 @@ evalBinaryExpression op x y =
                 EQUAL_EQUAL -> return $ BooleanValue (a == b)
                 _ -> reportError op "binary expression with unexpected operator"
 
+evalVariableExpr :: Token -> Interpreter Value
+evalVariableExpr tkn = do
+    locals <- gets localsMap
+
+    let mdistance = M.lookup tkn locals
+
+    case mdistance of
+        Nothing -> environmentGet tkn
+        Just d -> environmentGetAt d tkn
+
 evalAssignment :: Token -> Expression -> Interpreter Value
 evalAssignment tkn expr = do
     val <- evalExpression expr
-    environmentAssign tkn val
+    locals <- gets localsMap
+
+    let mdistance = M.lookup tkn locals
+
+    case mdistance of
+        Nothing -> environmentAssign tkn val
+        Just d -> environmentAssignAt d tkn val
+
     return val
 
 evalAddition :: Token -> Value -> Value -> Interpreter Value

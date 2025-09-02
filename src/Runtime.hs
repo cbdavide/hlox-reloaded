@@ -9,12 +9,15 @@ module Runtime (
     InterpreterContext (..),
     Callable (..),
     CallableImpl (..),
+    Locals,
     -- Environment
     Environment,
     createEnv,
     envAssign,
     envDefine,
     envLookup,
+    frameAssign,
+    frameLookup,
     popFrame,
     pushFrame,
     globalEnvironment,
@@ -27,15 +30,17 @@ module Runtime (
 ) where
 
 import Control.Monad.Except (ExceptT)
+import Control.Monad.Extra (ifM)
 import Control.Monad.State (MonadIO (liftIO), StateT)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Token (Token)
-import Data.IORef (newIORef, IORef, readIORef, writeIORef)
-import Control.Monad.Extra (ifM)
+
+type Locals = Map Token Int
 
 data RuntimeInterrupt = ReturnValue Token Value | Error RuntimeError
     deriving (Eq, Show)
@@ -46,8 +51,9 @@ data RuntimeError = RuntimeError
     }
     deriving (Eq, Show)
 
-newtype InterpreterContext = InterpreterContext
+data InterpreterContext = InterpreterContext
     { environment :: Environment
+    , localsMap :: Locals
     }
 
 data Value
@@ -113,14 +119,16 @@ createEnv = createFrame >>= \fr -> pure [fr]
 
 envLookup :: Text -> Environment -> IO (Maybe Value)
 envLookup _ [] = pure Nothing
-envLookup k (e:es) = frameLookup k e >>= \case
-    Nothing -> envLookup k es
-    x -> pure x
+envLookup k (e : es) =
+    frameLookup k e >>= \case
+        Nothing -> envLookup k es
+        x -> pure x
 
 envAssign :: Text -> Value -> Environment -> IO Bool
-envAssign k v env = envLookup k env >>= \case 
-    Nothing -> pure False
-    Just _ -> envAssign' k v env >> pure True
+envAssign k v env =
+    envLookup k env >>= \case
+        Nothing -> pure False
+        Just _ -> envAssign' k v env >> pure True
 
 envDefine :: Text -> Value -> Environment -> IO Bool
 envDefine _ _ [] = pure False
@@ -128,9 +136,10 @@ envDefine k v (e : _) = frameDefine k v e >> pure True
 
 envAssign' :: Text -> Value -> Environment -> IO ()
 envAssign' _ _ [] = pure ()
-envAssign' k v (e : es) = frameAssign k v e >>= \case
-    False -> envAssign' k v es
-    True -> pure ()
+envAssign' k v (e : es) =
+    frameAssign k v e >>= \case
+        False -> envAssign' k v es
+        True -> pure ()
 
 isTruthy :: Value -> Bool
 isTruthy Nil = False
@@ -195,6 +204,3 @@ globalEnvironment = do
     newEnv <- createEnv
     mapM_ (\x -> envDefine (T.pack $ name x) (FunctionValue $ Callable x) newEnv) globalFunctions
     pure newEnv
--- globalEnvironment = [foldr define M.empty globalFunctions]
---   where
---     define a = frameDefine (T.pack $ name a) (FunctionValue $ Callable a)
