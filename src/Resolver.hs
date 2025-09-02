@@ -1,12 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Resolver (visitStmt) where
+module Resolver (resolve) where
 
 import Control.Monad.Extra (when)
-import Control.Monad.State (State, gets, modify)
+import Control.Monad.State (State, execState, gets, modify)
 import Data.Foldable (for_)
-import Data.List (uncons, findIndex)
+import Data.List (findIndex, uncons)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
@@ -23,14 +23,22 @@ data ResolverError = ResolverError
     }
     deriving (Show)
 
-data ResolverCtx = ResolverCtx
+data ResolverContext = ResolverContext
     { scopes :: [Scope]
     , errors :: [ResolverError]
     , locals :: Locals
     }
     deriving (Show)
 
-type Resolver a = State ResolverCtx a
+type Resolver a = State ResolverContext a
+
+resolve :: [Stmt] -> Either [ResolverError] Locals
+resolve stmts = if null errors' then Left errors' else Right locals'
+  where
+    ctx = ResolverContext{scopes = [], errors = [], locals = M.empty}
+    result = execState (visitStmts stmts) ctx
+    locals' = locals result
+    errors' = errors result
 
 newResolverError :: Token -> Text -> ResolverError
 newResolverError = ResolverError
