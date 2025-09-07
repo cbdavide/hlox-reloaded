@@ -3,9 +3,9 @@
 
 module Resolver (resolve) where
 
-import Control.Monad.Extra (when)
+import Control.Monad.Extra (when, whenM)
 import Control.Monad.State (State, execState, gets, modify)
-import Data.Foldable (for_)
+import Data.Foldable (for_, traverse_)
 import Data.List (findIndex, uncons)
 import Data.Map (Map)
 import qualified Data.Map as M
@@ -15,6 +15,9 @@ import Token (Token (..))
 
 type Scope = Map Text Bool
 type Locals = Map Token Int
+
+data FunctionType = None | Function
+    deriving (Eq, Show)
 
 data ResolverError = ResolverError
     { token :: Token
@@ -26,15 +29,25 @@ data ResolverContext = ResolverContext
     { scopes :: [Scope]
     , errors :: [ResolverError]
     , locals :: Locals
+    , currentFunction :: FunctionType
     }
     deriving (Show)
 
 type Resolver a = State ResolverContext a
 
+resolverContext :: ResolverContext
+resolverContext =
+    ResolverContext
+        { scopes = []
+        , errors = []
+        , locals = M.empty
+        , currentFunction = None
+        }
+
 resolve :: [Stmt] -> Either [ResolverError] Locals
 resolve stmts = if null errors' then Right locals' else Left errors'
   where
-    ctx = ResolverContext{scopes = [], errors = [], locals = M.empty}
+    ctx = resolverContext
     result = execState (visitStmts stmts) ctx
     locals' = locals result
     errors' = reverse $ errors result
@@ -47,6 +60,9 @@ modifyErrors errs = modify (\x -> x{errors = errs})
 
 modifyLocals :: Locals -> Resolver ()
 modifyLocals l = modify (\x -> x{locals = l})
+
+modifyFunctionType :: FunctionType -> Resolver ()
+modifyFunctionType fnType = modify (\x -> x{currentFunction = fnType})
 
 reportError :: Token -> Text -> Resolver ()
 reportError tkn msg = gets errors >>= \errs -> modifyErrors (newResolverError tkn msg : errs)
@@ -99,12 +115,17 @@ visitStmt (Var tkn expr) = visitVarStmt tkn expr
 visitStmt (FunctionStmt name params body) = visitFunctionStmt name params body
 visitStmt (IfStmt expr ifBranch mElseBranch) = visitIfStmt expr ifBranch mElseBranch
 visitStmt (WhileStmt expr stmt) = visitExpr expr >> visitStmt stmt
-visitStmt (Return _ mexpr) = maybe (pure ()) visitExpr mexpr
+visitStmt (Return tkn mexpr) = visitReturnStmt tkn mexpr
 visitStmt (Expression expr) = visitExpr expr
 visitStmt (Print expr) = visitExpr expr
 
 visitStmts :: [Stmt] -> Resolver ()
 visitStmts = mapM_ visitStmt
+
+visitReturnStmt :: Token -> Maybe Expression -> Resolver ()
+visitReturnStmt tkn expr = do
+    whenM (gets ((== None) . currentFunction)) (reportError tkn "Can't return from top-level code.")
+    traverse_ visitExpr expr
 
 visitBlock :: [Stmt] -> Resolver ()
 visitBlock stmts = beginScope >> visitStmts stmts >> endScope
@@ -116,14 +137,19 @@ visitFunctionStmt :: Token -> [Token] -> [Stmt] -> Resolver ()
 visitFunctionStmt name params body =
     declare name
         >> define (lexeme name)
-        >> resolveFunction params body
+        >> resolveFunction Function params body
 
-resolveFunction :: [Token] -> [Stmt] -> Resolver ()
-resolveFunction params body =
+resolveFunction :: FunctionType -> [Token] -> [Stmt] -> Resolver ()
+resolveFunction fnType params body = do
+    enclosingFunctionType <- gets currentFunction
+    modifyFunctionType fnType
+
     beginScope
-        >> mapM_ resolveFunctionParam params
-        >> visitStmts body
-        >> endScope
+    mapM_ resolveFunctionParam params
+    visitStmts body
+    endScope
+
+    modifyFunctionType enclosingFunctionType
 
 visitIfStmt :: Expression -> Stmt -> Maybe Stmt -> Resolver ()
 visitIfStmt expr thenBr Nothing = visitExpr expr >> visitStmt thenBr
