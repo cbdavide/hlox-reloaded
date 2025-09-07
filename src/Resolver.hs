@@ -9,7 +9,6 @@ import Data.Foldable (for_)
 import Data.List (findIndex, uncons)
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Parser (Expression (..), Stmt (..))
 import Token (Token (..))
@@ -33,12 +32,12 @@ data ResolverContext = ResolverContext
 type Resolver a = State ResolverContext a
 
 resolve :: [Stmt] -> Either [ResolverError] Locals
-resolve stmts = if null errors' then Left errors' else Right locals'
+resolve stmts = if null errors' then Right locals' else Left errors'
   where
     ctx = ResolverContext{scopes = [], errors = [], locals = M.empty}
     result = execState (visitStmts stmts) ctx
     locals' = locals result
-    errors' = errors result
+    errors' = reverse $ errors result
 
 newResolverError :: Token -> Text -> ResolverError
 newResolverError = ResolverError
@@ -58,11 +57,14 @@ setLocal expr val = gets locals >>= \ls -> modifyLocals (M.insert expr val ls)
 newScope :: Scope
 newScope = M.empty
 
+scopeMember :: Text -> Scope -> Bool
+scopeMember = M.member
+
 scopeInsert :: Text -> Bool -> Scope -> Scope
 scopeInsert = M.insert
 
-scopeLookup :: Text -> Scope -> Bool
-scopeLookup k scp = fromMaybe False (M.lookup k scp)
+scopeLookup :: Text -> Scope -> Maybe Bool
+scopeLookup = M.lookup
 
 modifyScope :: [Scope] -> Resolver ()
 modifyScope s = modify (\x -> x{scopes = s})
@@ -83,7 +85,7 @@ scopePeekLookup :: Text -> Resolver (Maybe Bool)
 scopePeekLookup k =
     scopesPeek >>= \case
         Nothing -> pure Nothing
-        Just scp -> pure $ Just (scopeLookup k scp)
+        Just scp -> pure $ scopeLookup k scp
 
 scopePut :: Text -> Bool -> Resolver ()
 scopePut k v =
@@ -108,11 +110,11 @@ visitBlock :: [Stmt] -> Resolver ()
 visitBlock stmts = beginScope >> visitStmts stmts >> endScope
 
 visitVarStmt :: Token -> Expression -> Resolver ()
-visitVarStmt tkn expr = declare (lexeme tkn) >> visitExpr expr >> define (lexeme tkn)
+visitVarStmt tkn expr = declare tkn >> visitExpr expr >> define (lexeme tkn)
 
 visitFunctionStmt :: Token -> [Token] -> [Stmt] -> Resolver ()
 visitFunctionStmt name params body =
-    declare (lexeme name)
+    declare name
         >> define (lexeme name)
         >> resolveFunction params body
 
@@ -128,7 +130,7 @@ visitIfStmt expr thenBr Nothing = visitExpr expr >> visitStmt thenBr
 visitIfStmt expr thenBr (Just elseBr) = visitExpr expr >> visitStmt thenBr >> visitStmt elseBr
 
 resolveFunctionParam :: Token -> Resolver ()
-resolveFunctionParam tkn = declare (lexeme tkn) >> define (lexeme tkn)
+resolveFunctionParam tkn = declare tkn >> define (lexeme tkn)
 
 visitExpr :: Expression -> Resolver ()
 visitExpr (Variable tkn) = visitVariableExpr tkn
@@ -158,14 +160,25 @@ visitAssignExpr tkn expr = visitExpr expr >> resolveLocal tkn
 
 resolveLocal :: Token -> Resolver ()
 resolveLocal tkn = do
-    scopes' <- gets scopes
-    let midx = findIndex (M.member (lexeme tkn)) scopes'
+    scps <- gets scopes
+    let midx = findIndex (M.member (lexeme tkn)) scps
     -- We pass the number of scopes between the current innermost
     -- scope and the scope where the varaible was found
     for_ midx (setLocal tkn)
 
-declare :: Text -> Resolver ()
-declare k = scopePut k False
+declare :: Token -> Resolver ()
+declare tkn = do
+    scopeList <- gets scopes
+
+    case scopeList of
+        [] -> pure ()
+        (scope : _) -> do
+            let key = lexeme tkn
+
+            when (scopeMember key scope) $
+                reportError tkn "Already a variable with this name in this scope."
+
+            scopePut key False
 
 define :: Text -> Resolver ()
 define k = scopePut k True
