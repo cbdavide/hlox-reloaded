@@ -1,6 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Runtime (
     Interpreter,
@@ -13,9 +12,7 @@ module Runtime (
     -- Environment
     Environment,
     createEnv,
-    envAssign,
     envDefine,
-    envLookup,
     frameAssign,
     frameLookup,
     popFrame,
@@ -117,29 +114,9 @@ frameDefine k v fr = readIORef fr >>= \m -> writeIORef fr (M.insert k v m)
 createEnv :: IO Environment
 createEnv = createFrame >>= \fr -> pure [fr]
 
-envLookup :: Text -> Environment -> IO (Maybe Value)
-envLookup _ [] = pure Nothing
-envLookup k (e : es) =
-    frameLookup k e >>= \case
-        Nothing -> envLookup k es
-        x -> pure x
-
-envAssign :: Text -> Value -> Environment -> IO Bool
-envAssign k v env =
-    envLookup k env >>= \case
-        Nothing -> pure False
-        Just _ -> envAssign' k v env >> pure True
-
 envDefine :: Text -> Value -> Environment -> IO Bool
 envDefine _ _ [] = pure False
 envDefine k v (e : _) = frameDefine k v e >> pure True
-
-envAssign' :: Text -> Value -> Environment -> IO ()
-envAssign' _ _ [] = pure ()
-envAssign' k v (e : es) =
-    frameAssign k v e >>= \case
-        False -> envAssign' k v es
-        True -> pure ()
 
 isTruthy :: Value -> Bool
 isTruthy Nil = False

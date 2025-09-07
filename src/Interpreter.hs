@@ -25,9 +25,7 @@ import Runtime (
     RuntimeInterrupt (..),
     Value (..),
     callableFromValue,
-    envAssign,
     envDefine,
-    envLookup,
     frameAssign,
     frameLookup,
     globalEnvironment,
@@ -102,15 +100,6 @@ environmentGetAt idx tkn = do
         Just v -> pure v
         Nothing -> reportError tkn "internal error: expected token at specified env frame was not found"
 
-environmentGet :: Token -> Interpreter Value
-environmentGet tkn = do
-    env <- gets environment
-    mvalue <- liftIO (envLookup (lexeme tkn) env)
-
-    case mvalue of
-        Just v -> return v
-        Nothing -> reportError tkn ("undefined variable '" <> lexeme tkn <> "'")
-
 environmentAssignAt :: Int -> Token -> Value -> Interpreter ()
 environmentAssignAt idx tkn value = do
     env <- gets environment
@@ -124,13 +113,6 @@ environmentAssignAt idx tkn value = do
     if result
         then pure ()
         else reportError tkn "internal error: expected token at specified frame was not found"
-
-environmentAssign :: Token -> Value -> Interpreter ()
-environmentAssign tkn value =
-    gets environment >>= \env -> do
-        unlessM
-            (liftIO $ envAssign (lexeme tkn) value env)
-            (reportError tkn ("undefined variable '" <> lexeme tkn <> "'"))
 
 reportError :: Token -> T.Text -> Interpreter a
 reportError t msg = throwError $ Error (RuntimeError t msg)
@@ -277,23 +259,25 @@ evalBinaryExpression op x y =
 
 evalVariableExpr :: Token -> Interpreter Value
 evalVariableExpr tkn = do
+    envLength <- gets (length . environment)
     locals <- gets localsMap
 
     let mdistance = M.lookup tkn locals
 
     case mdistance of
-        Nothing -> environmentGet tkn
+        Nothing -> environmentGetAt (envLength - 1) tkn
         Just d -> environmentGetAt d tkn
 
 evalAssignment :: Token -> Expression -> Interpreter Value
 evalAssignment tkn expr = do
+    envLength <- gets (length . environment)
     val <- evalExpression expr
     locals <- gets localsMap
 
     let mdistance = M.lookup tkn locals
 
     case mdistance of
-        Nothing -> environmentAssign tkn val
+        Nothing -> environmentAssignAt (envLength - 1) tkn val
         Just d -> environmentAssignAt d tkn val
 
     return val
