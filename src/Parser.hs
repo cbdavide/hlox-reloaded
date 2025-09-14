@@ -4,7 +4,7 @@
 module Parser (
     Expression (..),
     ParseError (..),
-    Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, Return),
+    Stmt (Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, ClassStmt, Return),
     parse,
     parseExpression,
     parseStmt,
@@ -33,7 +33,7 @@ data Expression
     | Assign Token Expression
     deriving (Eq, Show)
 
-{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, Return #-}
+{-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, ClassStmt, Return #-}
 data Stmt
     = Expression Expression
     | Print Expression
@@ -43,6 +43,7 @@ data Stmt
     | IfStmt Expression Stmt (Maybe Stmt)
     | WhileStmt Expression Stmt
     | FunctionStmt Token [Token] [Stmt]
+    | ClassStmt Token [Stmt]
     | -- Used to recover from errors
       NOP
     deriving (Eq, Show)
@@ -129,7 +130,21 @@ declaration =
         Just tkn -> case tokenType tkn of
             VAR -> varDeclaration
             FUN -> advance >> functionDeclaration "function"
+            CLASS -> advance >> classDeclaration
             _ -> statement
+
+classDeclaration :: Parser Stmt
+classDeclaration = do
+    identifier <- consume IDENTIFIER "Expected class name"
+    _ <- consume LEFT_BRACE "Expected '{' before class body"
+    methods <- manyTill (match [RIGHT_BRACE] ||^ isAtEnd) (functionDeclaration "method")
+    _ <- consume RIGHT_BRACE "Expected '}' after class body"
+    pure $ ClassStmt identifier methods
+
+manyTill :: Parser Bool -> Parser a -> Parser [a]
+manyTill stopCond parseFunc = reverse <$> go []
+  where
+    go stmts = ifM stopCond (pure []) (parseFunc >>= \stmt -> go (stmt : stmts))
 
 functionDeclaration :: String -> Parser Stmt
 functionDeclaration kind = do
