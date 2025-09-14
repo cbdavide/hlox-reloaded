@@ -8,6 +8,8 @@ module Runtime (
     InterpreterContext (..),
     Callable (..),
     CallableImpl (..),
+    Class (..),
+    ClassImpl (..),
     Locals,
     -- Environment
     Environment,
@@ -24,6 +26,7 @@ module Runtime (
     isString,
     isTruthy,
     callableFromValue,
+    classFromValue,
 ) where
 
 import Control.Monad.Except (ExceptT)
@@ -58,12 +61,25 @@ data Value
     | StringValue Text
     | BooleanValue Bool
     | FunctionValue Callable
+    | ClassValue Class
     | Nil
     deriving (Eq)
 
 type Interpreter a = ExceptT RuntimeInterrupt (StateT InterpreterContext IO) a
 
 data Callable = forall c. (CallableImpl c, Eq c) => Callable c
+data Class = forall c. (ClassImpl c, Eq c) => Class c
+
+class ClassImpl c where
+    toString :: c -> String
+
+instance ClassImpl Class where
+    toString :: Class -> String
+    toString (Class c) = toString c
+
+instance Eq Class where
+    (==) :: Class -> Class -> Bool
+    Class c1 == Class c2 = toString c1 == toString c2
 
 class CallableImpl c where
     arity :: c -> Int
@@ -135,12 +151,17 @@ callableFromValue :: Value -> Maybe Callable
 callableFromValue (FunctionValue c) = Just c
 callableFromValue _ = Nothing
 
+classFromValue :: Value -> Maybe Class
+classFromValue (ClassValue c) = Just c
+classFromValue _ = Nothing
+
 instance Show Value where
     show :: Value -> String
     show Nil = "nil"
     show (StringValue v) = T.unpack v
     show (BooleanValue v) = show v
     show (FunctionValue v) = name v
+    show (ClassValue v) = toString v
     show (NumberValue v) = format v
       where
         format :: Float -> String
