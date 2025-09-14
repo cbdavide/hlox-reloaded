@@ -113,6 +113,7 @@ visitStmt :: Stmt -> Resolver ()
 visitStmt (Block stmts) = visitBlock stmts
 visitStmt (Var tkn expr) = visitVarStmt tkn expr
 visitStmt (FunctionStmt name params body) = visitFunctionStmt name params body
+visitStmt (ClassStmt name _) = visitClassStmt name
 visitStmt (IfStmt expr ifBranch mElseBranch) = visitIfStmt expr ifBranch mElseBranch
 visitStmt (WhileStmt expr stmt) = visitExpr expr >> visitStmt stmt
 visitStmt (Return tkn mexpr) = visitReturnStmt tkn mexpr
@@ -138,6 +139,9 @@ visitFunctionStmt name params body =
     declare name
         >> define (lexeme name)
         >> resolveFunction Function params body
+
+visitClassStmt :: Token -> Resolver ()
+visitClassStmt name = declare name >> define (lexeme name)
 
 resolveFunction :: FunctionType -> [Token] -> [Stmt] -> Resolver ()
 resolveFunction fnType params body = do

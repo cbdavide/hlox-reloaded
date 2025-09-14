@@ -17,6 +17,8 @@ import Parser (Expression (..), Stmt (..))
 import Runtime (
     Callable (..),
     CallableImpl (..),
+    Class (..),
+    ClassImpl (..),
     Environment,
     Interpreter,
     InterpreterContext (..),
@@ -37,6 +39,15 @@ import Runtime (
  )
 
 import Token (Token (..), TokenType (..))
+
+data LoxClass = LoxClass
+    { className :: Token
+    , classMethods :: [Stmt]
+    }
+    deriving (Eq)
+
+instance ClassImpl LoxClass where
+    toString = T.unpack . lexeme . className
 
 data LoxFunction = LoxFunction
     { fnName :: Token
@@ -154,6 +165,7 @@ evalStmt (Block stmts) = evalBlock stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 evalStmt (WhileStmt cond body) = evalWhileStmt cond body
 evalStmt (FunctionStmt nm params body) = evalFunctionStmt nm params body
+evalStmt (ClassStmt nm _) = evalClassStmt nm
 evalStmt (Return t v) = evalReturnStmt t v
 
 evalReturnStmt :: Token -> Maybe Expression -> Interpreter ()
@@ -163,6 +175,13 @@ evalReturnStmt t mv = do
         Just expr -> evalExpression expr
 
     throwReturnInterrupt t value
+
+evalClassStmt :: Token -> Interpreter ()
+evalClassStmt nm = do
+    environmentDefine nm Nil
+
+    let classValue = Class $ LoxClass{className = nm, classMethods = []}
+    environmentAssignAt 0 nm (ClassValue classValue)
 
 evalFunctionStmt :: Token -> [Token] -> [Stmt] -> Interpreter ()
 evalFunctionStmt nm params body =
