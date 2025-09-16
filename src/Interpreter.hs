@@ -20,6 +20,7 @@ import Runtime (
     Class (..),
     ClassImpl (..),
     Environment,
+    Instance (..),
     Interpreter,
     InterpreterContext (..),
     Locals,
@@ -47,7 +48,20 @@ data LoxClass = LoxClass
     deriving (Eq)
 
 instance ClassImpl LoxClass where
+    toString :: LoxClass -> String
     toString = T.unpack . lexeme . className
+
+instance CallableImpl LoxClass where
+    arity :: LoxClass -> Int
+    arity _ = 0
+
+    name :: LoxClass -> String
+    name c = "<constructor " <> toString c <> ">"
+
+    call :: LoxClass -> [Value] -> Interpreter Value
+    call c _ = do
+        let ins = Instance{klass = Class c, fields = []}
+        pure $ InstanceValue ins
 
 data LoxFunction = LoxFunction
     { fnName :: Token

@@ -10,6 +10,7 @@ module Runtime (
     CallableImpl (..),
     Class (..),
     ClassImpl (..),
+    Instance (..),
     Locals,
     -- Environment
     Environment,
@@ -62,29 +63,40 @@ data Value
     | BooleanValue Bool
     | FunctionValue Callable
     | ClassValue Class
+    | InstanceValue Instance
     | Nil
     deriving (Eq)
 
 type Interpreter a = ExceptT RuntimeInterrupt (StateT InterpreterContext IO) a
 
 data Callable = forall c. (CallableImpl c, Eq c) => Callable c
-data Class = forall c. (ClassImpl c, Eq c) => Class c
+data Class = forall c. (ClassImpl c, CallableImpl c, Eq c) => Class c
 
 class ClassImpl c where
     toString :: c -> String
-
-instance ClassImpl Class where
-    toString :: Class -> String
-    toString (Class c) = toString c
-
-instance Eq Class where
-    (==) :: Class -> Class -> Bool
-    Class c1 == Class c2 = toString c1 == toString c2
 
 class CallableImpl c where
     arity :: c -> Int
     name :: c -> String
     call :: c -> [Value] -> Interpreter Value
+
+instance ClassImpl Class where
+    toString :: Class -> String
+    toString (Class c) = toString c
+
+instance CallableImpl Class where
+    arity :: Class -> Int
+    arity (Class c) = arity c
+
+    name :: Class -> String
+    name (Class c) = name c
+
+    call :: Class -> [Value] -> Interpreter Value
+    call (Class c) = call c
+
+instance Eq Class where
+    (==) :: Class -> Class -> Bool
+    Class c1 == Class c2 = toString c1 == toString c2
 
 instance Eq Callable where
     (==) :: Callable -> Callable -> Bool
@@ -99,6 +111,12 @@ instance CallableImpl Callable where
 
     call :: Callable -> [Value] -> Interpreter Value
     call (Callable c) = call c
+
+data Instance = Instance
+    { klass :: Class
+    , fields :: [Int]
+    }
+    deriving (Eq)
 
 type Frame = IORef (Map Text Value)
 type Environment = [Frame]
@@ -149,6 +167,7 @@ isString _ = False
 
 callableFromValue :: Value -> Maybe Callable
 callableFromValue (FunctionValue c) = Just c
+callableFromValue (ClassValue c) = Just (Callable c)
 callableFromValue _ = Nothing
 
 classFromValue :: Value -> Maybe Class
@@ -162,6 +181,7 @@ instance Show Value where
     show (BooleanValue v) = show v
     show (FunctionValue v) = name v
     show (ClassValue v) = toString v
+    show (InstanceValue v) = "<instance: " <> (toString . klass $ v) <> ">"
     show (NumberValue v) = format v
       where
         format :: Float -> String
