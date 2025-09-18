@@ -27,7 +27,7 @@ module Runtime (
     isString,
     isTruthy,
     callableFromValue,
-    classFromValue,
+    instanceFromValue,
 ) where
 
 import Control.Monad.Except (ExceptT)
@@ -170,9 +170,9 @@ callableFromValue (FunctionValue c) = Just c
 callableFromValue (ClassValue c) = Just (Callable c)
 callableFromValue _ = Nothing
 
-classFromValue :: Value -> Maybe Class
-classFromValue (ClassValue c) = Just c
-classFromValue _ = Nothing
+instanceFromValue :: Value -> Maybe Instance
+instanceFromValue (InstanceValue c) = Just c
+instanceFromValue _ = Nothing
 
 instance Show Value where
     show :: Value -> String

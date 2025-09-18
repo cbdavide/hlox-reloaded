@@ -28,6 +28,7 @@ data Expression
     | Logical Expression Token Expression
     | Binary Expression Token Expression
     | Call Expression Token [Expression]
+    | Get Expression Token
     | Grouping Expression
     | Variable Token
     | Assign Token Expression
@@ -327,13 +328,16 @@ unary :: Parser Expression
 unary = ifM (not <$> match [BANG, MINUS]) call (Unary <$> unsafeAdvance <*> unary)
 
 call :: Parser Expression
-call = primary >>= \expr -> process expr
-  where
-    process expr =
-        ifM
-            (match [LEFT_PAREN])
-            (advance >> finishCall expr >>= process)
-            (return expr)
+call = primary >>= manyCalls
+
+manyCalls :: Expression -> Parser Expression
+manyCalls expr =
+    peek >>= \case
+        Nothing -> pure expr
+        Just t -> case tokenType t of
+            LEFT_PAREN -> advance >> finishCall expr >>= manyCalls
+            DOT -> advance >> getExpression expr >>= manyCalls
+            _ -> pure expr
 
 finishCall :: Expression -> Parser Expression
 finishCall expr = do
@@ -348,6 +352,9 @@ getCallArguments = ifM (match [RIGHT_PAREN]) (return []) (reverse <$> go [])
     go es =
         expression >>= \e ->
             ifM (match [COMMA]) (advance >> go (e : es)) (return $ e : es)
+
+getExpression :: Expression -> Parser Expression
+getExpression expr = Get expr <$> consume IDENTIFIER "Expected property name after '.'."
 
 primary :: Parser Expression
 primary =

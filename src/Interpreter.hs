@@ -32,6 +32,7 @@ import Runtime (
     frameAssign,
     frameLookup,
     globalEnvironment,
+    instanceFromValue,
     isNumber,
     isString,
     isTruthy,
@@ -239,6 +240,20 @@ evalExpression (Variable tkn) = evalVariableExpr tkn
 evalExpression (Assign tkn expr) = evalAssignment tkn expr
 evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
 evalExpression (Call expr paren args) = evalCallExpression expr paren args
+evalExpression (Get expr tkn) = evalGetExpr expr tkn
+
+evalGetExpr :: Expression -> Token -> Interpreter Value
+evalGetExpr expr tkn = do
+    value <- evalExpression expr
+
+    -- TODO: Extract property from the instance
+    let instance' = extractInstance value tkn
+    return Nil
+
+extractInstance :: Value -> Token -> Interpreter Instance
+extractInstance val tkn = case instanceFromValue val of
+    Nothing -> reportError tkn (T.pack $ "value '" <> show val <> "' doesn't have properties")
+    Just v -> pure v
 
 extractCallable :: Value -> Token -> Interpreter Callable
 extractCallable val tkn = case callableFromValue val of

@@ -169,6 +169,7 @@ visitExpr (Unary _ expr) = visitExpr expr
 visitExpr (Binary left _ right) = visitExpr left >> visitExpr right
 visitExpr (Logical left _ right) = visitExpr left >> visitExpr right
 visitExpr (Call callee _ exprs) = visitExpr callee >> visitExprs exprs
+visitExpr (Get expr _) = visitExpr expr
 visitExpr (Grouping expr) = visitExpr expr
 visitExpr (Literal _) = pure ()
 
