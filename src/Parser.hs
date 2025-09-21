@@ -29,6 +29,7 @@ data Expression
     | Binary Expression Token Expression
     | Call Expression Token [Expression]
     | Get Expression Token
+    | Set Expression Token Expression
     | Grouping Expression
     | Variable Token
     | Assign Token Expression
@@ -304,6 +305,7 @@ assignment = do
 
         case expr of
             Variable name -> return $ Assign name value
+            Get getExpr name -> return $ Set getExpr name value
             _ -> addErrorWithToken "Invalid assignment target" equals >> return expr
 
 orExpr :: Parser Expression

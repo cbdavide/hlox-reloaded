@@ -10,8 +10,12 @@ module Runtime (
     CallableImpl (..),
     Class (..),
     ClassImpl (..),
-    Instance (..),
     Locals,
+    -- Instance
+    Instance (..),
+    createInstance,
+    instanceGetField,
+    instanceSetField,
     -- Environment
     Environment,
     createEnv,
@@ -112,14 +116,28 @@ instance CallableImpl Callable where
     call :: Callable -> [Value] -> Interpreter Value
     call (Callable c) = call c
 
+type InstanceFields = IORef (Map Text Value)
+
 data Instance = Instance
     { klass :: Class
-    , fields :: [Int]
+    , fields :: InstanceFields
     }
     deriving (Eq)
 
 type Frame = IORef (Map Text Value)
 type Environment = [Frame]
+
+createInstance :: Class -> IO Instance
+createInstance cls = do
+    fields' <- newIORef M.empty
+    pure $ Instance {klass=cls, fields=fields'}
+
+instanceGetField :: Instance -> Text -> IO (Maybe Value)
+instanceGetField inst key = readIORef (fields inst) >>= \m -> pure $ M.lookup key m
+
+instanceSetField :: Instance -> Text -> Value -> IO ()
+instanceSetField inst key val = readIORef fieldsRef >>= \m -> writeIORef fieldsRef (M.insert key val m)
+    where fieldsRef = fields inst
 
 createFrame :: IO Frame
 createFrame = newIORef M.empty

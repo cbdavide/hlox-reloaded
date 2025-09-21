@@ -28,11 +28,14 @@ import Runtime (
     RuntimeInterrupt (..),
     Value (..),
     callableFromValue,
+    createInstance,
     envDefine,
     frameAssign,
     frameLookup,
     globalEnvironment,
     instanceFromValue,
+    instanceGetField,
+    instanceSetField,
     isNumber,
     isString,
     isTruthy,
@@ -60,9 +63,7 @@ instance CallableImpl LoxClass where
     name c = "<constructor " <> toString c <> ">"
 
     call :: LoxClass -> [Value] -> Interpreter Value
-    call c _ = do
-        let ins = Instance{klass = Class c, fields = []}
-        pure $ InstanceValue ins
+    call c _ = InstanceValue <$> liftIO (createInstance (Class c))
 
 data LoxFunction = LoxFunction
     { fnName :: Token
@@ -241,14 +242,29 @@ evalExpression (Assign tkn expr) = evalAssignment tkn expr
 evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
 evalExpression (Call expr paren args) = evalCallExpression expr paren args
 evalExpression (Get expr tkn) = evalGetExpr expr tkn
+evalExpression (Set expr tkn val) = evalSetExpr expr tkn val
+
+evalSetExpr :: Expression -> Token -> Expression -> Interpreter Value
+evalSetExpr expr tkn val = do
+    callee <- evalExpression expr
+
+    instance' <- extractInstance callee tkn
+
+    value <- evalExpression val
+    liftIO $ instanceSetField instance' (lexeme tkn) value
+
+    pure value
 
 evalGetExpr :: Expression -> Token -> Interpreter Value
 evalGetExpr expr tkn = do
     value <- evalExpression expr
 
-    -- TODO: Extract property from the instance
-    let instance' = extractInstance value tkn
-    return Nil
+    instance' <- extractInstance value tkn
+    mvalue <- liftIO $ instanceGetField instance' (lexeme tkn)
+
+    case mvalue of
+        Just v -> pure v
+        Nothing -> reportError tkn ("Undefined property '" <> lexeme tkn <> "'")
 
 extractInstance :: Value -> Token -> Interpreter Instance
 extractInstance val tkn = case instanceFromValue val of
