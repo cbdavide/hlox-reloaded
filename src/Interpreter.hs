@@ -6,12 +6,14 @@ module Interpreter (
     interpretExpression,
 ) where
 
+import Control.Applicative ((<|>))
 import Control.Monad (unless, void)
 import Control.Monad.Except (catchError, runExceptT, throwError)
 import Control.Monad.Extra (ifM, unlessM)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.State (evalStateT, gets, modify)
 import qualified Data.Map as M
+import Data.Text (Text)
 import qualified Data.Text as T
 import Parser (Expression (..), Stmt (..))
 import Runtime (
@@ -19,6 +21,7 @@ import Runtime (
     CallableImpl (..),
     Class (..),
     ClassImpl (..),
+    ClassMethods,
     Environment,
     Instance (..),
     Interpreter,
@@ -47,13 +50,16 @@ import Token (Token (..), TokenType (..))
 
 data LoxClass = LoxClass
     { className :: Token
-    , classMethods :: [Stmt]
+    , classMethods :: ClassMethods
     }
     deriving (Eq)
 
 instance ClassImpl LoxClass where
     toString :: LoxClass -> String
     toString = T.unpack . lexeme . className
+
+    methods :: LoxClass -> ClassMethods
+    methods = classMethods
 
 instance CallableImpl LoxClass where
     arity :: LoxClass -> Int
@@ -181,7 +187,7 @@ evalStmt (Block stmts) = evalBlock stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 evalStmt (WhileStmt cond body) = evalWhileStmt cond body
 evalStmt (FunctionStmt nm params body) = evalFunctionStmt nm params body
-evalStmt (ClassStmt nm _) = evalClassStmt nm
+evalStmt (ClassStmt nm methods') = evalClassStmt nm methods'
 evalStmt (Return t v) = evalReturnStmt t v
 
 evalReturnStmt :: Token -> Maybe Expression -> Interpreter ()
@@ -192,12 +198,20 @@ evalReturnStmt t mv = do
 
     throwReturnInterrupt t value
 
-evalClassStmt :: Token -> Interpreter ()
-evalClassStmt nm = do
+evalClassStmt :: Token -> [Stmt] -> Interpreter ()
+evalClassStmt nm methods' = do
+    env <- gets environment
     environmentDefine nm Nil
 
-    let classValue = Class $ LoxClass{className = nm, classMethods = []}
+    methodsMap <- M.fromList <$> mapM (classMethod nm env) methods'
+
+    let classValue = Class $ LoxClass{className = nm, classMethods = methodsMap}
     environmentAssignAt 0 nm (ClassValue classValue)
+
+classMethod :: Token -> Environment -> Stmt -> Interpreter (Text, Callable)
+classMethod _ env (FunctionStmt name' params' body') =
+    pure (lexeme name', Callable $ LoxFunction name' params' body' env)
+classMethod tkn _ _ = reportError tkn "expected function statement"
 
 evalFunctionStmt :: Token -> [Token] -> [Stmt] -> Interpreter ()
 evalFunctionStmt nm params body =
@@ -260,9 +274,11 @@ evalGetExpr expr tkn = do
     value <- evalExpression expr
 
     instance' <- extractInstance value tkn
-    mvalue <- liftIO $ instanceGetField instance' (lexeme tkn)
 
-    case mvalue of
+    mvalue <- liftIO $ instanceGetField instance' (lexeme tkn)
+    let mmethod = FunctionValue <$> M.lookup (lexeme tkn) (methods . klass $ instance')
+
+    case mvalue <|> mmethod of
         Just v -> pure v
         Nothing -> reportError tkn ("Undefined property '" <> lexeme tkn <> "'")
 

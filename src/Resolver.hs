@@ -16,7 +16,7 @@ import Token (Token (..))
 type Scope = Map Text Bool
 type Locals = Map Token Int
 
-data FunctionType = None | Function
+data FunctionType = None | Function | Method
     deriving (Eq, Show)
 
 data ResolverError = ResolverError
@@ -113,7 +113,7 @@ visitStmt :: Stmt -> Resolver ()
 visitStmt (Block stmts) = visitBlock stmts
 visitStmt (Var tkn expr) = visitVarStmt tkn expr
 visitStmt (FunctionStmt name params body) = visitFunctionStmt name params body
-visitStmt (ClassStmt name _) = visitClassStmt name
+visitStmt (ClassStmt name methods) = visitClassStmt name methods
 visitStmt (IfStmt expr ifBranch mElseBranch) = visitIfStmt expr ifBranch mElseBranch
 visitStmt (WhileStmt expr stmt) = visitExpr expr >> visitStmt stmt
 visitStmt (Return tkn mexpr) = visitReturnStmt tkn mexpr
@@ -140,8 +140,15 @@ visitFunctionStmt name params body =
         >> define (lexeme name)
         >> resolveFunction Function params body
 
-visitClassStmt :: Token -> Resolver ()
-visitClassStmt name = declare name >> define (lexeme name)
+processFunctionStmt :: Token -> Stmt -> Resolver ()
+processFunctionStmt _ (FunctionStmt _ params body) = resolveFunction Method params body
+processFunctionStmt tkn _ = reportError tkn "Expected function statement"
+
+visitClassStmt :: Token -> [Stmt] -> Resolver ()
+visitClassStmt name methods =
+    declare name
+        >> define (lexeme name)
+        >> mapM_ (processFunctionStmt name) methods
 
 resolveFunction :: FunctionType -> [Token] -> [Stmt] -> Resolver ()
 resolveFunction fnType params body = do

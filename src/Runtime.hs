@@ -10,6 +10,7 @@ module Runtime (
     CallableImpl (..),
     Class (..),
     ClassImpl (..),
+    ClassMethods,
     Locals,
     -- Instance
     Instance (..),
@@ -76,8 +77,11 @@ type Interpreter a = ExceptT RuntimeInterrupt (StateT InterpreterContext IO) a
 data Callable = forall c. (CallableImpl c, Eq c) => Callable c
 data Class = forall c. (ClassImpl c, CallableImpl c, Eq c) => Class c
 
+type ClassMethods = Map Text Callable
+
 class ClassImpl c where
     toString :: c -> String
+    methods :: c -> ClassMethods
 
 class CallableImpl c where
     arity :: c -> Int
@@ -87,6 +91,9 @@ class CallableImpl c where
 instance ClassImpl Class where
     toString :: Class -> String
     toString (Class c) = toString c
+
+    methods :: Class -> ClassMethods
+    methods (Class c) = methods c
 
 instance CallableImpl Class where
     arity :: Class -> Int
@@ -130,14 +137,15 @@ type Environment = [Frame]
 createInstance :: Class -> IO Instance
 createInstance cls = do
     fields' <- newIORef M.empty
-    pure $ Instance {klass=cls, fields=fields'}
+    pure $ Instance{klass = cls, fields = fields'}
 
 instanceGetField :: Instance -> Text -> IO (Maybe Value)
 instanceGetField inst key = readIORef (fields inst) >>= \m -> pure $ M.lookup key m
 
 instanceSetField :: Instance -> Text -> Value -> IO ()
 instanceSetField inst key val = readIORef fieldsRef >>= \m -> writeIORef fieldsRef (M.insert key val m)
-    where fieldsRef = fields inst
+  where
+    fieldsRef = fields inst
 
 createFrame :: IO Frame
 createFrame = newIORef M.empty

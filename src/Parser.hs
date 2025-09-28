@@ -146,7 +146,7 @@ classDeclaration = do
 manyTill :: Parser Bool -> Parser a -> Parser [a]
 manyTill stopCond parseFunc = reverse <$> go []
   where
-    go stmts = ifM stopCond (pure []) (parseFunc >>= \stmt -> go (stmt : stmts))
+    go stmts = ifM stopCond (pure stmts) (parseFunc >>= \stmt -> go (stmt : stmts))
 
 functionDeclaration :: String -> Parser Stmt
 functionDeclaration kind = do
