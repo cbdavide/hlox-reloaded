@@ -31,6 +31,7 @@ import Runtime (
     RuntimeInterrupt (..),
     Value (..),
     callableFromValue,
+    createEnv,
     createInstance,
     envDefine,
     frameAssign,
@@ -68,8 +69,8 @@ instance CallableImpl LoxClass where
     name :: LoxClass -> String
     name c = "<constructor " <> toString c <> ">"
 
-    call :: LoxClass -> [Value] -> Interpreter Value
-    call c _ = InstanceValue <$> liftIO (createInstance (Class c))
+    callWithEnvironment :: LoxClass -> Environment -> [Value] -> Interpreter Value
+    callWithEnvironment c _ _ = InstanceValue <$> liftIO (createInstance (Class c))
 
 data LoxFunction = LoxFunction
     { fnName :: Token
@@ -86,10 +87,11 @@ instance CallableImpl LoxFunction where
     name :: LoxFunction -> String
     name f = T.unpack $ "<function " <> (lexeme . fnName) f <> ">"
 
-    call :: LoxFunction -> [Value] -> Interpreter Value
-    call c args = do
+    callWithEnvironment :: LoxFunction -> Environment -> [Value] -> Interpreter Value
+    callWithEnvironment c customEnv args = do
         prev <- gets environment
-        closureEnv <- liftIO $ pushFrame (fnClosureEnv c)
+
+        let closureEnv = customEnv ++ fnClosureEnv c
         modifyEnvironment closureEnv
 
         mapM_ (uncurry environmentDefine) (zip (fnParams c) args)
@@ -98,6 +100,27 @@ instance CallableImpl LoxFunction where
 
         modifyEnvironment prev
         pure value
+
+data LoxMethod = LoxMethod
+    { methodInstance :: Instance
+    , methodCallable :: Callable
+    }
+    deriving (Eq)
+
+instance CallableImpl LoxMethod where
+    arity c = arity (methodCallable c)
+
+    -- TODO: Improve the method name
+    name c = "<method: " <> name (methodCallable c) <> ">"
+
+    call :: LoxMethod -> [Value] -> Interpreter Value
+    call c vs = do
+        closureEnv <- liftIO createEnv
+        void $ liftIO (envDefine "this" (InstanceValue (methodInstance c)) closureEnv)
+        callWithEnvironment (methodCallable c) closureEnv vs
+
+    callWithEnvironment :: LoxMethod -> Environment -> [Value] -> Interpreter Value
+    callWithEnvironment c = callWithEnvironment (methodCallable c)
 
 handleFunctionInterrupt :: Environment -> RuntimeInterrupt -> Interpreter Value
 handleFunctionInterrupt _ (ReturnValue _ val) = pure val
@@ -257,6 +280,7 @@ evalExpression (Logical v1 op v2) = evalLogicalExpression op v1 v2
 evalExpression (Call expr paren args) = evalCallExpression expr paren args
 evalExpression (Get expr tkn) = evalGetExpr expr tkn
 evalExpression (Set expr tkn val) = evalSetExpr expr tkn val
+evalExpression (This tkn) = evalVariableExpr tkn
 
 evalSetExpr :: Expression -> Token -> Expression -> Interpreter Value
 evalSetExpr expr tkn val = do
@@ -276,9 +300,11 @@ evalGetExpr expr tkn = do
     instance' <- extractInstance value tkn
 
     mvalue <- liftIO $ instanceGetField instance' (lexeme tkn)
-    let mmethod = FunctionValue <$> M.lookup (lexeme tkn) (methods . klass $ instance')
 
-    case mvalue <|> mmethod of
+    let mmethod = LoxMethod instance' <$> M.lookup (lexeme tkn) (methods . klass $ instance')
+        mmethodValue = FunctionValue . Callable <$> mmethod
+
+    case mvalue <|> mmethodValue of
         Just v -> pure v
         Nothing -> reportError tkn ("Undefined property '" <> lexeme tkn <> "'")
 

@@ -148,7 +148,10 @@ visitClassStmt :: Token -> [Stmt] -> Resolver ()
 visitClassStmt name methods =
     declare name
         >> define (lexeme name)
+        >> beginScope
+        >> scopePut "this" True
         >> mapM_ (processFunctionStmt name) methods
+        >> endScope
 
 resolveFunction :: FunctionType -> [Token] -> [Stmt] -> Resolver ()
 resolveFunction fnType params body = do
@@ -180,6 +183,7 @@ visitExpr (Get expr _) = visitExpr expr
 visitExpr (Set expr _ value) = visitExpr expr >> visitExpr value
 visitExpr (Grouping expr) = visitExpr expr
 visitExpr (Literal _) = pure ()
+visitExpr (This tkn) = resolveLocal tkn
 
 visitExprs :: [Expression] -> Resolver ()
 visitExprs = mapM_ visitExpr

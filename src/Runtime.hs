@@ -86,7 +86,11 @@ class ClassImpl c where
 class CallableImpl c where
     arity :: c -> Int
     name :: c -> String
+
+    callWithEnvironment :: c -> Environment -> [Value] -> Interpreter Value
+
     call :: c -> [Value] -> Interpreter Value
+    call c = callWithEnvironment c []
 
 instance ClassImpl Class where
     toString :: Class -> String
@@ -105,6 +109,9 @@ instance CallableImpl Class where
     call :: Class -> [Value] -> Interpreter Value
     call (Class c) = call c
 
+    callWithEnvironment :: Class -> Environment -> [Value] -> Interpreter Value
+    callWithEnvironment (Class c) = callWithEnvironment c
+
 instance Eq Class where
     (==) :: Class -> Class -> Bool
     Class c1 == Class c2 = toString c1 == toString c2
@@ -122,6 +129,9 @@ instance CallableImpl Callable where
 
     call :: Callable -> [Value] -> Interpreter Value
     call (Callable c) = call c
+
+    callWithEnvironment :: Callable -> Environment -> [Value] -> Interpreter Value
+    callWithEnvironment (Callable c) = callWithEnvironment c
 
 type InstanceFields = IORef (Map Text Value)
 
@@ -228,8 +238,8 @@ instance CallableImpl NativeFunction where
     arity :: NativeFunction -> Int
     arity = fnArity
 
-    call :: NativeFunction -> [Value] -> Interpreter Value
-    call = fnBody
+    callWithEnvironment :: NativeFunction -> Environment -> [Value] -> Interpreter Value
+    callWithEnvironment nf _ = fnBody nf
 
 instance Eq NativeFunction where
     a == b = name a == name b

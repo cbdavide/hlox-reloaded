@@ -33,6 +33,7 @@ data Expression
     | Grouping Expression
     | Variable Token
     | Assign Token Expression
+    | This Token
     deriving (Eq, Show)
 
 {-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, ClassStmt, Return #-}
@@ -368,7 +369,8 @@ primary =
             NIL -> literal' Nil
             NUMBER -> numberLiteral' t
             STRING -> stringLiteral' t
-            IDENTIFIER -> return $ Variable t
+            THIS -> pure $ This t
+            IDENTIFIER -> pure $ Variable t
             LEFT_PAREN -> group
             _ -> reportErrorWithToken "Expected expression" t
 
