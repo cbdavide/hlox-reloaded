@@ -19,6 +19,9 @@ type Locals = Map Token Int
 data FunctionType = None | Function | Method
     deriving (Eq, Show)
 
+data ClassType = NoClass | Class
+    deriving (Eq, Show)
+
 data ResolverError = ResolverError
     { token :: Token
     , errorMessage :: Text
@@ -30,6 +33,7 @@ data ResolverContext = ResolverContext
     , errors :: [ResolverError]
     , locals :: Locals
     , currentFunction :: FunctionType
+    , currentClass :: ClassType
     }
     deriving (Show)
 
@@ -42,6 +46,7 @@ resolverContext =
         , errors = []
         , locals = M.empty
         , currentFunction = None
+        , currentClass = NoClass
         }
 
 resolve :: [Stmt] -> Either [ResolverError] Locals
@@ -63,6 +68,9 @@ modifyLocals l = modify (\x -> x{locals = l})
 
 modifyFunctionType :: FunctionType -> Resolver ()
 modifyFunctionType fnType = modify (\x -> x{currentFunction = fnType})
+
+modifyClassType :: ClassType -> Resolver ()
+modifyClassType clsType = modify (\x -> x{currentClass = clsType})
 
 reportError :: Token -> Text -> Resolver ()
 reportError tkn msg = gets errors >>= \errs -> modifyErrors (newResolverError tkn msg : errs)
@@ -145,13 +153,19 @@ processFunctionStmt _ (FunctionStmt _ params body) = resolveFunction Method para
 processFunctionStmt tkn _ = reportError tkn "Expected function statement"
 
 visitClassStmt :: Token -> [Stmt] -> Resolver ()
-visitClassStmt name methods =
+visitClassStmt name methods = do
+    enclosingClassType <- gets currentClass
+    modifyClassType Class
+
     declare name
-        >> define (lexeme name)
-        >> beginScope
-        >> scopePut "this" True
-        >> mapM_ (processFunctionStmt name) methods
-        >> endScope
+    define (lexeme name)
+
+    beginScope
+    scopePut "this" True
+    mapM_ (processFunctionStmt name) methods
+    endScope
+
+    modifyClassType enclosingClassType
 
 resolveFunction :: FunctionType -> [Token] -> [Stmt] -> Resolver ()
 resolveFunction fnType params body = do
@@ -183,7 +197,13 @@ visitExpr (Get expr _) = visitExpr expr
 visitExpr (Set expr _ value) = visitExpr expr >> visitExpr value
 visitExpr (Grouping expr) = visitExpr expr
 visitExpr (Literal _) = pure ()
-visitExpr (This tkn) = resolveLocal tkn
+visitExpr (This tkn) = visitThisExpr tkn
+
+visitThisExpr :: Token -> Resolver ()
+visitThisExpr tkn = do
+    whenM (gets ((== NoClass) . currentClass)) (reportError tkn "Can't use 'this' outside of a class.")
+
+    resolveLocal tkn
 
 visitExprs :: [Expression] -> Resolver ()
 visitExprs = mapM_ visitExpr
