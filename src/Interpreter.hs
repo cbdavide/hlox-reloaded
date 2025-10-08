@@ -12,6 +12,7 @@ import Control.Monad.Except (catchError, runExceptT, throwError)
 import Control.Monad.Extra (ifM, unlessM)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.State (evalStateT, gets, modify)
+import Data.Foldable (for_)
 import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -43,10 +44,8 @@ import Runtime (
     isNumber,
     isString,
     isTruthy,
-    popFrame,
     pushFrame,
  )
-
 import Token (Token (..), TokenType (..))
 
 data LoxClass = LoxClass
@@ -64,13 +63,23 @@ instance ClassImpl LoxClass where
 
 instance CallableImpl LoxClass where
     arity :: LoxClass -> Int
-    arity _ = 0
+    arity c = maybe 0 arity (M.lookup "init" (classMethods c))
 
     name :: LoxClass -> String
     name c = "<constructor " <> toString c <> ">"
 
-    callWithEnvironment :: LoxClass -> Environment -> [Value] -> Interpreter Value
-    callWithEnvironment c _ _ = InstanceValue <$> liftIO (createInstance (Class c))
+    call :: LoxClass -> [Value] -> Interpreter Value
+    call c args = do
+        inst <- liftIO (createInstance (Class c))
+
+        let mmetod = M.lookup "init" (classMethods c)
+
+        for_ mmetod $ \method -> do
+            closureEnv <- liftIO createEnv
+            void $ liftIO (envDefine "this" (InstanceValue inst) closureEnv)
+            void $ callWithEnvironment method closureEnv args
+
+        pure $ InstanceValue inst
 
 data LoxFunction = LoxFunction
     { fnName :: Token
@@ -89,17 +98,13 @@ instance CallableImpl LoxFunction where
 
     callWithEnvironment :: LoxFunction -> Environment -> [Value] -> Interpreter Value
     callWithEnvironment c customEnv args = do
-        prev <- gets environment
+        -- Add the customEnv only if it contains any frame
+        let closureEnv = if null customEnv then fnClosureEnv c else customEnv ++ fnClosureEnv c
+        callEnv <- liftIO $ pushFrame closureEnv
 
-        let closureEnv = customEnv ++ fnClosureEnv c
-        modifyEnvironment closureEnv
+        mapM_ (\(tkn, value) -> liftIO $ envDefine (lexeme tkn) value callEnv) (zip (fnParams c) args)
 
-        mapM_ (uncurry environmentDefine) (zip (fnParams c) args)
-
-        value <- catchError (evalBlock (fnBody c) >> pure Nil) (handleFunctionInterrupt prev)
-
-        modifyEnvironment prev
-        pure value
+        catchError (evalBlock callEnv (fnBody c) >> pure Nil) handleFunctionInterrupt
 
 data LoxMethod = LoxMethod
     { methodInstance :: Instance
@@ -122,18 +127,15 @@ instance CallableImpl LoxMethod where
     callWithEnvironment :: LoxMethod -> Environment -> [Value] -> Interpreter Value
     callWithEnvironment c = callWithEnvironment (methodCallable c)
 
-handleFunctionInterrupt :: Environment -> RuntimeInterrupt -> Interpreter Value
-handleFunctionInterrupt _ (ReturnValue _ val) = pure val
-handleFunctionInterrupt env err = modifyEnvironment env >> throwError err
+handleFunctionInterrupt :: RuntimeInterrupt -> Interpreter Value
+handleFunctionInterrupt (ReturnValue _ val) = pure val
+handleFunctionInterrupt err = throwError err
 
 modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x{environment = env})
 
-removeEnvironmentFrame :: Interpreter ()
-removeEnvironmentFrame = gets environment >>= modifyEnvironment . popFrame
-
-addEnvironmentFrame :: Interpreter ()
-addEnvironmentFrame = gets environment >>= liftIO . pushFrame >>= modifyEnvironment
+addEnvironmentFrame :: Interpreter Environment
+addEnvironmentFrame = gets environment >>= liftIO . pushFrame
 
 environmentDefine :: Token -> Value -> Interpreter ()
 environmentDefine tkn value =
@@ -206,7 +208,7 @@ evalStmt :: Stmt -> Interpreter ()
 evalStmt (Expression expr) = void $ evalExpression expr
 evalStmt (Print expr) = evalPrintStmt expr
 evalStmt (Var tkn expr) = evalVarStmt tkn expr
-evalStmt (Block stmts) = evalBlock stmts
+evalStmt (Block stmts) = evalBlockWrapper stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 evalStmt (WhileStmt cond body) = evalWhileStmt cond body
 evalStmt (FunctionStmt nm params body) = evalFunctionStmt nm params body
@@ -248,11 +250,15 @@ evalPrintStmt expr = evalExpression expr >>= \val -> void (liftIO (print val))
 evalVarStmt :: Token -> Expression -> Interpreter ()
 evalVarStmt tkn expr = evalExpression expr >>= \val -> environmentDefine tkn val
 
-evalBlock :: [Stmt] -> Interpreter ()
-evalBlock stmts = do
-    addEnvironmentFrame
-    catchError (mapM_ evalStmt stmts) (\err -> removeEnvironmentFrame >> throwError err)
-    removeEnvironmentFrame
+evalBlockWrapper :: [Stmt] -> Interpreter ()
+evalBlockWrapper stmts = addEnvironmentFrame >>= flip evalBlock stmts
+
+evalBlock :: Environment -> [Stmt] -> Interpreter ()
+evalBlock env stmts = do
+    previousEnv <- gets environment
+    modifyEnvironment env
+    catchError (mapM_ evalStmt stmts) (\err -> modifyEnvironment previousEnv >> throwError err)
+    modifyEnvironment previousEnv
 
 evalIfStmt :: Expression -> Stmt -> Maybe Stmt -> Interpreter ()
 evalIfStmt cond thenBranch elseBranch = do

@@ -23,7 +23,6 @@ module Runtime (
     envDefine,
     frameAssign,
     frameLookup,
-    popFrame,
     pushFrame,
     globalEnvironment,
     -- Value
@@ -88,9 +87,12 @@ class CallableImpl c where
     name :: c -> String
 
     callWithEnvironment :: c -> Environment -> [Value] -> Interpreter Value
+    callWithEnvironment c _ = call c
 
     call :: c -> [Value] -> Interpreter Value
     call c = callWithEnvironment c []
+
+    {-# MINIMAL arity, name, (call | callWithEnvironment) #-}
 
 instance ClassImpl Class where
     toString :: Class -> String
@@ -165,9 +167,6 @@ frameLookup k fr = readIORef fr >>= \m -> pure $ M.lookup k m
 
 pushFrame :: Environment -> IO Environment
 pushFrame env = createFrame >>= \fr -> pure (fr : env)
-
-popFrame :: Environment -> Environment
-popFrame = drop 1
 
 frameIsMember :: Text -> Frame -> IO Bool
 frameIsMember k fr = readIORef fr >>= \m -> pure $ M.member k m
