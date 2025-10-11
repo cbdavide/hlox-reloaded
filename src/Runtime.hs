@@ -19,6 +19,7 @@ module Runtime (
     instanceSetField,
     -- Environment
     Environment,
+    Frame,
     createEnv,
     envDefine,
     frameAssign,

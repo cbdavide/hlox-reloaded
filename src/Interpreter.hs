@@ -9,7 +9,7 @@ module Interpreter (
 import Control.Applicative ((<|>))
 import Control.Monad (unless, void)
 import Control.Monad.Except (catchError, runExceptT, throwError)
-import Control.Monad.Extra (ifM, unlessM)
+import Control.Monad.Extra (ifM, maybeM, unlessM)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.State (evalStateT, gets, modify)
 import Data.Foldable (for_)
@@ -24,6 +24,7 @@ import Runtime (
     ClassImpl (..),
     ClassMethods,
     Environment,
+    Frame,
     Instance (..),
     Interpreter,
     InterpreterContext (..),
@@ -86,6 +87,7 @@ data LoxFunction = LoxFunction
     , fnParams :: [Token]
     , fnBody :: [Stmt]
     , fnClosureEnv :: Environment
+    , fnIsInitializer :: Bool
     }
     deriving (Eq)
 
@@ -104,7 +106,7 @@ instance CallableImpl LoxFunction where
 
         mapM_ (\(tkn, value) -> liftIO $ envDefine (lexeme tkn) value callEnv) (zip (fnParams c) args)
 
-        catchError (evalBlock callEnv (fnBody c) >> pure Nil) handleFunctionInterrupt
+        catchError (evalBlock callEnv (fnBody c) >> returnValue c callEnv Nil) (handleFunctionInterrupt c callEnv)
 
 data LoxMethod = LoxMethod
     { methodInstance :: Instance
@@ -127,9 +129,14 @@ instance CallableImpl LoxMethod where
     callWithEnvironment :: LoxMethod -> Environment -> [Value] -> Interpreter Value
     callWithEnvironment c = callWithEnvironment (methodCallable c)
 
-handleFunctionInterrupt :: RuntimeInterrupt -> Interpreter Value
-handleFunctionInterrupt (ReturnValue _ val) = pure val
-handleFunctionInterrupt err = throwError err
+handleFunctionInterrupt :: LoxFunction -> Environment -> RuntimeInterrupt -> Interpreter Value
+handleFunctionInterrupt lf env (ReturnValue _ val) = returnValue lf env val
+handleFunctionInterrupt _ _ err = throwError err
+
+returnValue :: LoxFunction -> Environment -> Value -> Interpreter Value
+returnValue lf env def = if not (fnIsInitializer lf) then pure def else inst
+  where
+    inst = maybeM (pure Nil) pure (envFrameGet "this" (env !! 1))
 
 modifyEnvironment :: Environment -> Interpreter ()
 modifyEnvironment env = modify (\x -> x{environment = env})
@@ -144,6 +151,9 @@ environmentDefine tkn value =
             (liftIO (envDefine (lexeme tkn) value env))
             (reportError tkn "internal error: there is no environment defined")
 
+envFrameGet :: Text -> Frame -> Interpreter (Maybe Value)
+envFrameGet key frame = liftIO $ frameLookup key frame
+
 environmentGetAt :: Int -> Token -> Interpreter Value
 environmentGetAt idx tkn = do
     env <- gets environment
@@ -152,7 +162,7 @@ environmentGetAt idx tkn = do
 
     let frame = env !! idx
 
-    result <- liftIO $ frameLookup (lexeme tkn) frame
+    result <- envFrameGet (lexeme tkn) frame
 
     case result of
         Just v -> pure v
@@ -235,13 +245,15 @@ evalClassStmt nm methods' = do
 
 classMethod :: Token -> Environment -> Stmt -> Interpreter (Text, Callable)
 classMethod _ env (FunctionStmt name' params' body') =
-    pure (lexeme name', Callable $ LoxFunction name' params' body' env)
+    pure (lexeme name', Callable $ LoxFunction name' params' body' env isInit)
+  where
+    isInit = lexeme name' == "init"
 classMethod tkn _ _ = reportError tkn "expected function statement"
 
 evalFunctionStmt :: Token -> [Token] -> [Stmt] -> Interpreter ()
 evalFunctionStmt nm params body =
     gets environment >>= \env -> do
-        let fn = LoxFunction nm params body env
+        let fn = LoxFunction nm params body env False
         environmentDefine nm (FunctionValue $ Callable fn)
 
 evalPrintStmt :: Expression -> Interpreter ()
