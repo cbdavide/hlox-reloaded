@@ -3,7 +3,7 @@
 
 module Resolver (resolve) where
 
-import Control.Monad.Extra (when, whenM)
+import Control.Monad.Extra (when, whenM, (&&^))
 import Control.Monad.State (State, execState, gets, modify)
 import Data.Foldable (for_, traverse_)
 import Data.List (findIndex, uncons)
@@ -12,11 +12,12 @@ import qualified Data.Map as M
 import Data.Text (Text)
 import Parser (Expression (..), Stmt (..))
 import Token (Token (..))
+import Data.Maybe (isJust)
 
 type Scope = Map Text Bool
 type Locals = Map Token Int
 
-data FunctionType = None | Function | Method
+data FunctionType = None | Function | Method | Initializer
     deriving (Eq, Show)
 
 data ClassType = NoClass | Class
@@ -134,6 +135,7 @@ visitStmts = mapM_ visitStmt
 visitReturnStmt :: Token -> Maybe Expression -> Resolver ()
 visitReturnStmt tkn expr = do
     whenM (gets ((== None) . currentFunction)) (reportError tkn "Can't return from top-level code.")
+    whenM (gets ((== Initializer ) . currentFunction) &&^ pure (isJust expr)) (reportError tkn "Can't return a value from an initializer.")
     traverse_ visitExpr expr
 
 visitBlock :: [Stmt] -> Resolver ()
@@ -149,7 +151,9 @@ visitFunctionStmt name params body =
         >> resolveFunction Function params body
 
 processFunctionStmt :: Token -> Stmt -> Resolver ()
-processFunctionStmt _ (FunctionStmt _ params body) = resolveFunction Method params body
+processFunctionStmt _ (FunctionStmt name params body) = resolveFunction fnType params body
+  where
+    fnType = if lexeme name == "init" then Initializer else Method
 processFunctionStmt tkn _ = reportError tkn "Expected function statement"
 
 visitClassStmt :: Token -> [Stmt] -> Resolver ()
