@@ -46,7 +46,7 @@ data Stmt
     | IfStmt Expression Stmt (Maybe Stmt)
     | WhileStmt Expression Stmt
     | FunctionStmt Token [Token] [Stmt]
-    | ClassStmt Token [Stmt]
+    | ClassStmt Token (Maybe Expression) [Stmt]
     | -- Used to recover from errors
       NOP
     deriving (Eq, Show)
@@ -136,13 +136,19 @@ declaration =
             CLASS -> advance >> classDeclaration
             _ -> statement
 
+superClassExpr :: Parser (Maybe Expression)
+superClassExpr = match [LESS] >>= \case
+    False -> pure Nothing
+    True -> advance >> (Just . Variable <$> consume IDENTIFIER "Expected superclass name")
+
 classDeclaration :: Parser Stmt
 classDeclaration = do
     identifier <- consume IDENTIFIER "Expected class name"
+    superClass <- superClassExpr
     _ <- consume LEFT_BRACE "Expected '{' before class body"
     methods <- manyTill (match [RIGHT_BRACE] ||^ isAtEnd) (functionDeclaration "method")
     _ <- consume RIGHT_BRACE "Expected '}' after class body"
-    pure $ ClassStmt identifier methods
+    pure $ ClassStmt identifier superClass methods
 
 manyTill :: Parser Bool -> Parser a -> Parser [a]
 manyTill stopCond parseFunc = reverse <$> go []

@@ -1,5 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Interpreter (
     interpret,
@@ -52,6 +53,7 @@ import Token (Token (..), TokenType (..))
 data LoxClass = LoxClass
     { className :: Token
     , classMethods :: ClassMethods
+    , classParent :: Maybe Class
     }
     deriving (Eq)
 
@@ -222,7 +224,7 @@ evalStmt (Block stmts) = evalBlockWrapper stmts
 evalStmt (IfStmt cond thenBranch elseBranch) = evalIfStmt cond thenBranch elseBranch
 evalStmt (WhileStmt cond body) = evalWhileStmt cond body
 evalStmt (FunctionStmt nm params body) = evalFunctionStmt nm params body
-evalStmt (ClassStmt nm methods') = evalClassStmt nm methods'
+evalStmt (ClassStmt nm msup methods') = evalClassStmt nm msup methods'
 evalStmt (Return t v) = evalReturnStmt t v
 
 evalReturnStmt :: Token -> Maybe Expression -> Interpreter ()
@@ -233,15 +235,23 @@ evalReturnStmt t mv = do
 
     throwReturnInterrupt t value
 
-evalClassStmt :: Token -> [Stmt] -> Interpreter ()
-evalClassStmt nm methods' = do
+evalClassStmt :: Token -> Maybe Expression -> [Stmt] -> Interpreter ()
+evalClassStmt nm msup methods' = do
     env <- gets environment
+
+    supClass <- mapM (superClass nm) msup
+
     environmentDefine nm Nil
 
     methodsMap <- M.fromList <$> mapM (classMethod nm env) methods'
 
-    let classValue = Class $ LoxClass{className = nm, classMethods = methodsMap}
+    let classValue = Class $ LoxClass{className = nm, classMethods = methodsMap, classParent = supClass}
     environmentAssignAt 0 nm (ClassValue classValue)
+
+superClass :: Token -> Expression -> Interpreter Class
+superClass tkn expr = evalExpression expr >>= \case
+    (ClassValue cls) -> pure cls
+    _ -> reportError tkn "Superclass must be a class"
 
 classMethod :: Token -> Environment -> Stmt -> Interpreter (Text, Callable)
 classMethod _ env (FunctionStmt name' params' body') =

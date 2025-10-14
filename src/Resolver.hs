@@ -122,7 +122,7 @@ visitStmt :: Stmt -> Resolver ()
 visitStmt (Block stmts) = visitBlock stmts
 visitStmt (Var tkn expr) = visitVarStmt tkn expr
 visitStmt (FunctionStmt name params body) = visitFunctionStmt name params body
-visitStmt (ClassStmt name methods) = visitClassStmt name methods
+visitStmt (ClassStmt name msup methods) = visitClassStmt name msup methods
 visitStmt (IfStmt expr ifBranch mElseBranch) = visitIfStmt expr ifBranch mElseBranch
 visitStmt (WhileStmt expr stmt) = visitExpr expr >> visitStmt stmt
 visitStmt (Return tkn mexpr) = visitReturnStmt tkn mexpr
@@ -156,13 +156,20 @@ processFunctionStmt _ (FunctionStmt name params body) = resolveFunction fnType p
     fnType = if lexeme name == "init" then Initializer else Method
 processFunctionStmt tkn _ = reportError tkn "Expected function statement"
 
-visitClassStmt :: Token -> [Stmt] -> Resolver ()
-visitClassStmt name methods = do
+verifySuperClass :: Token -> Expression -> Resolver ()
+verifySuperClass tkn (Variable stkn) = when (lexeme tkn == lexeme stkn) (reportError stkn "A class can't inherit from itself.")
+verifySuperClass tkn _ = reportError tkn "Unexpected superclass exception"
+
+visitClassStmt :: Token -> Maybe Expression -> [Stmt] -> Resolver ()
+visitClassStmt name msup methods = do
     enclosingClassType <- gets currentClass
     modifyClassType Class
 
     declare name
     define (lexeme name)
+
+    mapM_ (verifySuperClass name) msup
+    mapM_ visitExpr msup
 
     beginScope
     scopePut "this" True
