@@ -83,6 +83,8 @@ class ClassImpl c where
     toString :: c -> String
     methods :: c -> ClassMethods
 
+    findMethod :: c -> Text -> Maybe Callable
+
 class CallableImpl c where
     arity :: c -> Int
     name :: c -> String
@@ -101,6 +103,9 @@ instance ClassImpl Class where
 
     methods :: Class -> ClassMethods
     methods (Class c) = methods c
+
+    findMethod :: Class -> Text -> Maybe Callable
+    findMethod (Class c) = findMethod c
 
 instance CallableImpl Class where
     arity :: Class -> Int

@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Interpreter (
     interpret,
@@ -64,9 +64,12 @@ instance ClassImpl LoxClass where
     methods :: LoxClass -> ClassMethods
     methods = classMethods
 
+    findMethod :: LoxClass -> Text -> Maybe Callable
+    findMethod c key = M.lookup key (methods c) <|> (classParent c >>= (`findMethod` key))
+
 instance CallableImpl LoxClass where
     arity :: LoxClass -> Int
-    arity c = maybe 0 arity (M.lookup "init" (classMethods c))
+    arity c = maybe 0 arity (findMethod c "init")
 
     name :: LoxClass -> String
     name c = "<constructor " <> toString c <> ">"
@@ -75,7 +78,7 @@ instance CallableImpl LoxClass where
     call c args = do
         inst <- liftIO (createInstance (Class c))
 
-        let mmetod = M.lookup "init" (classMethods c)
+        let mmetod = findMethod c "init"
 
         for_ mmetod $ \method -> do
             closureEnv <- liftIO createEnv
@@ -249,9 +252,10 @@ evalClassStmt nm msup methods' = do
     environmentAssignAt 0 nm (ClassValue classValue)
 
 superClass :: Token -> Expression -> Interpreter Class
-superClass tkn expr = evalExpression expr >>= \case
-    (ClassValue cls) -> pure cls
-    _ -> reportError tkn "Superclass must be a class"
+superClass tkn expr =
+    evalExpression expr >>= \case
+        (ClassValue cls) -> pure cls
+        _ -> reportError tkn "Superclass must be a class"
 
 classMethod :: Token -> Environment -> Stmt -> Interpreter (Text, Callable)
 classMethod _ env (FunctionStmt name' params' body') =
@@ -329,7 +333,7 @@ evalGetExpr expr tkn = do
 
     mvalue <- liftIO $ instanceGetField instance' (lexeme tkn)
 
-    let mmethod = LoxMethod instance' <$> M.lookup (lexeme tkn) (methods . klass $ instance')
+    let mmethod = LoxMethod instance' <$> findMethod (klass instance') (lexeme tkn)
         mmethodValue = FunctionValue . Callable <$> mmethod
 
     case mvalue <|> mmethodValue of
