@@ -34,6 +34,7 @@ data Expression
     | Variable Token
     | Assign Token Expression
     | This Token
+    | Super Token Token
     deriving (Eq, Show)
 
 {-# COMPLETE Expression, Print, Var, Block, IfStmt, WhileStmt, FunctionStmt, ClassStmt, Return #-}
@@ -375,10 +376,17 @@ primary =
             NIL -> literal' Nil
             NUMBER -> numberLiteral' t
             STRING -> stringLiteral' t
+            SUPER -> super t
             THIS -> pure $ This t
             IDENTIFIER -> pure $ Variable t
             LEFT_PAREN -> group
             _ -> reportErrorWithToken "Expected expression" t
+
+super :: Token -> Parser Expression
+super keyword = do
+    _ <- consume DOT "Expected '.' after 'super'"
+    method <- consume IDENTIFIER "Expected superclass method name"
+    pure $ Super keyword method
 
 literal' :: Value -> Parser Expression
 literal' l = return $ Literal l

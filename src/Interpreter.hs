@@ -120,9 +120,11 @@ data LoxMethod = LoxMethod
     deriving (Eq)
 
 instance CallableImpl LoxMethod where
+    arity :: LoxMethod -> Int
     arity c = arity (methodCallable c)
 
     -- TODO: Improve the method name
+    name :: LoxMethod -> String
     name c = "<method: " <> name (methodCallable c) <> ">"
 
     call :: LoxMethod -> [Value] -> Interpreter Value
@@ -246,7 +248,14 @@ evalClassStmt nm msup methods' = do
 
     environmentDefine nm Nil
 
-    methodsMap <- M.fromList <$> mapM (classMethod nm env) methods'
+    closureEnv <- case supClass of
+        Nothing -> pure env
+        Just cls -> do
+            newEnv <- liftIO (pushFrame env)
+            void $ liftIO (envDefine "super" (ClassValue cls) newEnv)
+            pure newEnv
+
+    methodsMap <- M.fromList <$> mapM (classMethod nm closureEnv) methods'
 
     let classValue = Class $ LoxClass{className = nm, classMethods = methodsMap, classParent = supClass}
     environmentAssignAt 0 nm (ClassValue classValue)
@@ -313,6 +322,38 @@ evalExpression (Call expr paren args) = evalCallExpression expr paren args
 evalExpression (Get expr tkn) = evalGetExpr expr tkn
 evalExpression (Set expr tkn val) = evalSetExpr expr tkn val
 evalExpression (This tkn) = evalVariableExpr tkn
+evalExpression (Super keyword method) = evalSuperExpr keyword method
+
+evalSuperExpr :: Token -> Token -> Interpreter Value
+evalSuperExpr keyword method = do
+    env <- gets environment
+    locals <- gets localsMap
+
+    let mdistance = M.lookup keyword locals
+
+    (superClass', instance') <- case mdistance of
+        Nothing -> reportError keyword "internal error: failed resolving 'super' reference"
+        Just d -> do
+            classValue <- environmentGetAt d keyword
+            supClass <- extractClass classValue keyword
+
+            mvalue <- envFrameGet "this" (env !! (d - 1))
+            minstance <- mapM (`extractInstance` keyword) mvalue
+
+            case minstance of
+                Nothing -> reportError keyword "internal error: failed resolving 'this' reference"
+                Just inst' -> pure (supClass, inst')
+
+    let mmethod = LoxMethod instance' <$> findMethod superClass' (lexeme method)
+        mmethodValue = FunctionValue . Callable <$> mmethod
+
+    case mmethodValue of
+        Just v -> pure v
+        Nothing -> reportError method ("Undefined property '" <> lexeme method <> "'")
+
+extractClass :: Value -> Token -> Interpreter Class
+extractClass (ClassValue cls) _ = pure cls
+extractClass _ tkn = reportError tkn "internal error: expected class value"
 
 evalSetExpr :: Expression -> Token -> Expression -> Interpreter Value
 evalSetExpr expr tkn val = do

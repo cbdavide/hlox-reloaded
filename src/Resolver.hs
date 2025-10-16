@@ -3,16 +3,16 @@
 
 module Resolver (resolve) where
 
-import Control.Monad.Extra (when, whenM, (&&^))
+import Control.Monad.Extra (when, whenM, (&&^), forM_)
 import Control.Monad.State (State, execState, gets, modify)
 import Data.Foldable (for_, traverse_)
 import Data.List (findIndex, uncons)
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Parser (Expression (..), Stmt (..))
 import Token (Token (..))
-import Data.Maybe (isJust)
 
 type Scope = Map Text Bool
 type Locals = Map Token Int
@@ -135,7 +135,7 @@ visitStmts = mapM_ visitStmt
 visitReturnStmt :: Token -> Maybe Expression -> Resolver ()
 visitReturnStmt tkn expr = do
     whenM (gets ((== None) . currentFunction)) (reportError tkn "Can't return from top-level code.")
-    whenM (gets ((== Initializer ) . currentFunction) &&^ pure (isJust expr)) (reportError tkn "Can't return a value from an initializer.")
+    whenM (gets ((== Initializer) . currentFunction) &&^ pure (isJust expr)) (reportError tkn "Can't return a value from an initializer.")
     traverse_ visitExpr expr
 
 visitBlock :: [Stmt] -> Resolver ()
@@ -168,13 +168,21 @@ visitClassStmt name msup methods = do
     declare name
     define (lexeme name)
 
-    mapM_ (verifySuperClass name) msup
-    mapM_ visitExpr msup
+    forM_ msup $ \supClass -> do
+        verifySuperClass name supClass
+        visitExpr supClass
 
+        -- add super-class scope
+        beginScope
+        scopePut "super" True
+        
     beginScope
     scopePut "this" True
     mapM_ (processFunctionStmt name) methods
     endScope
+
+    -- remove super-class scope
+    mapM_ (const endScope) msup
 
     modifyClassType enclosingClassType
 
@@ -209,6 +217,10 @@ visitExpr (Set expr _ value) = visitExpr expr >> visitExpr value
 visitExpr (Grouping expr) = visitExpr expr
 visitExpr (Literal _) = pure ()
 visitExpr (This tkn) = visitThisExpr tkn
+visitExpr (Super keyword method) = visitSuperExpr keyword method
+
+visitSuperExpr :: Token -> Token -> Resolver ()
+visitSuperExpr keyword _ = resolveLocal keyword
 
 visitThisExpr :: Token -> Resolver ()
 visitThisExpr tkn = do
