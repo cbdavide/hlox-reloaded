@@ -3,7 +3,7 @@
 
 module Resolver (resolve) where
 
-import Control.Monad.Extra (when, whenM, (&&^), forM_)
+import Control.Monad.Extra (forM_, when, whenM, (&&^))
 import Control.Monad.State (State, execState, gets, modify)
 import Data.Foldable (for_, traverse_)
 import Data.List (findIndex, uncons)
@@ -20,7 +20,7 @@ type Locals = Map Token Int
 data FunctionType = None | Function | Method | Initializer
     deriving (Eq, Show)
 
-data ClassType = NoClass | Class
+data ClassType = NoClass | Class | Subclass
     deriving (Eq, Show)
 
 data ResolverError = ResolverError
@@ -169,13 +169,14 @@ visitClassStmt name msup methods = do
     define (lexeme name)
 
     forM_ msup $ \supClass -> do
+        modifyClassType Subclass
         verifySuperClass name supClass
         visitExpr supClass
 
         -- add super-class scope
         beginScope
         scopePut "super" True
-        
+
     beginScope
     scopePut "this" True
     mapM_ (processFunctionStmt name) methods
@@ -220,7 +221,12 @@ visitExpr (This tkn) = visitThisExpr tkn
 visitExpr (Super keyword method) = visitSuperExpr keyword method
 
 visitSuperExpr :: Token -> Token -> Resolver ()
-visitSuperExpr keyword _ = resolveLocal keyword
+visitSuperExpr keyword _ = do
+    classType <- gets currentClass
+    case classType of
+        NoClass -> reportError keyword "Can't use 'super' outside of a class."
+        Class -> reportError keyword "Can't use 'super' in a class with no superclass."
+        Subclass -> resolveLocal keyword
 
 visitThisExpr :: Token -> Resolver ()
 visitThisExpr tkn = do
